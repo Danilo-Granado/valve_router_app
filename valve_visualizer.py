@@ -209,7 +209,19 @@ def _break_cycles_tanks(points, edges, plant, ends=frozenset()):
             continue
         outside_in = {p: sum(1 for q in G.predecessors(p) if q not in comp) for p in comp}
         holds = {p: _vessel(plant, p) for p in comp}
-        roots = sorted(comp, key=lambda p: (p in ends, not holds[p], -outside_in[p], p))
+        # how far the flow is from where it enters the loop: the first vessel it reaches starts the loop
+        dist, frontier = {}, [p for p in comp if outside_in[p]]
+        for p in frontier:
+            dist[p] = 0
+        while frontier:
+            nxt = []
+            for p in frontier:
+                for q in G.successors(p):
+                    if q in comp and q not in dist:
+                        dist[q] = dist[p] + 1
+                        nxt.append(q)
+            frontier = nxt
+        roots = sorted(comp, key=lambda p: (p in ends, not holds[p], dist.get(p, 0), -outside_in[p], p))
         state = {}
         for root in roots:
             if root in state:
@@ -548,37 +560,41 @@ def area_layout(plant, budget=3.0):
         edges += list(zip(chain, chain[1:]))
     vessels = _loop_vessels(list(plant.nodes) + list(plant.valves), edges, plant)
     collectors = frozenset(p for p, (i, o) in vessels.items() if i > o)
-    breakers = [lambda pts, es, pl: _break_cycles_tanks(pts, es, pl)]
+    # (how to open the loops, extra cost): the greedy way reverses the fewest lines but ignores the
+    # process (it may draw a pump's outlet backwards), so it only wins when clearly better
+    breakers = [(lambda pts, es, pl: _break_cycles_tanks(pts, es, pl), 0)]
     if collectors:
-        breakers.append(lambda pts, es, pl: _break_cycles_tanks(pts, es, pl, collectors))
-    breakers.append(_break_cycles_greedy)
+        breakers.append((lambda pts, es, pl: _break_cycles_tanks(pts, es, pl, collectors), 0))
+    breakers.append((_break_cycles_greedy, 4))
+    lines = [(a, b) for a, b in edges if a != b]
 
-    def cost(pos, choice):
+    def cost(pos, choice, extra=0):
         cross, overlap, over = ortho_score(plant, pos)
         over += overlap
         xs, ys = [p[0] for p in pos.values()], [p[1] for p in pos.values()]
         size = max(max(xs) - min(xs), (max(ys) - min(ys)) * 16 / 9)
-        return cross + 3 * over + size / 250 + 1.5 * choice
+        backwards = sum(1 for a, b in lines if a in pos and b in pos and pos[b][0] < pos[a][0] - 1)
+        return cross + 3 * over + size / 250 + 1.5 * choice + backwards + extra
 
     best = best_cost = None
     seen = set()
     for choice in range(3):
         for wrap in (0.25, 0.6):
-            for breaker in breakers:
+            for breaker, extra in breakers:
                 if best is not None and time.time() - start > budget:
                     break
                 found = _area_layout(plant, breaker, choice, wrap, seen)
                 if found is None:
                     continue
-                c = cost(found[0], choice)
+                c = cost(found[0], choice, extra)
                 if best is None or c < best_cost:
-                    best, best_cost, best_choice = found, c, choice
+                    best, best_cost, best_choice, best_extra = found, c, choice, extra
     if best is None:
         return {}
     pos, columns, half_h = best
     polished = {p: list(v) for p, v in pos.items()}
     _polish(plant, polished, columns, half_h, deadline=start + budget * 1.5)
-    if cost(polished, best_choice) <= best_cost:
+    if cost(polished, best_choice, best_extra) <= best_cost:
         pos = polished
     _level(plant, pos, columns, half_h)
     return pos

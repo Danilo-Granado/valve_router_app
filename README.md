@@ -9,7 +9,7 @@ an interactive diagram.
 | `valve_router.py` | Command line. Finds the best route(s) between two points and lists the valves to **open** and **close**; can save the operation to the *Matriz de Válvulas* sheet. Also checks the workbook. |
 | `valve_visualizer.py` | Draws the network as an interactive HTML page, optionally with a route highlighted. |
 | `valve_editor.py` + `valve_editor.html` | Interactive editor in the browser: add and connect equipment, segments and valves, check the data and calculate routes as you edit, then save back to the workbook. |
-| `valvulas_m.xlsx` | Example workbook. |
+| `valve_database.xlsx` | Small example plant, also a template for your own (see [Example plant](#example-plant)). |
 
 Everything runs on your own computer; the browser pages only load the drawing library
 (vis-network) from the internet, and that can be avoided too (see [Offline use](#offline-use)).
@@ -25,20 +25,46 @@ pip install -r requirements.txt
 ## Quick start
 
 ```bash
-python valve_router.py valvulas_m.xlsx --check
+python valve_router.py valve_database.xlsx --check
 ```
 
 ```bash
-python valve_router.py valvulas_m.xlsx --from TQ-1 --to RF-02
+python valve_router.py valve_database.xlsx --from TQ-101 --to RE-201 --product Leite
 ```
 
 ```bash
-python valve_visualizer.py valvulas_m.xlsx --open
+python valve_visualizer.py valve_database.xlsx --from TQ-101 --to RE-201 --product Leite --open
 ```
 
 ```bash
-python valve_editor.py valvulas_m.xlsx
+python valve_editor.py valve_database.xlsx
 ```
+
+## Example plant
+
+`valve_database.xlsx` is a small invented plant: 11 nodes in three areas, 12 segments and
+12 valves.
+
+- **Área 100** – raw milk tank `TQ-101` and water tank `TQ-102` feed a pump `BB-101`
+  through junction `DV-101`. After the pump, check valve `VRT-103` and junction `DV-102`,
+  where the line either returns to `TQ-101` (recirculation) or goes on to the process.
+- **Área 200** – pasteurizer `TC-201`, reactor `RE-201`, and junction `DV-201` at the
+  reactor outlet, with drain `DR-201`.
+- **Área 300** – finished product tank `TQ-301` and buffer tank `TQ-302`, which can
+  send product back to the pump.
+
+Things to try:
+
+| Command | Shows |
+|---|---|
+| `--from TQ-101 --to RE-201 --product Leite` | A route with valves to open and close, through the check valve |
+| `--from RE-201 --to TQ-301 --product Leite` | The next step: a route cannot pass *through* a reactor, only start or end there |
+| `--from TQ-101 --to TQ-101` | Recirculation loop of `TQ-101` |
+| `--from TQ-102 --to TQ-301 --product Água` | No route, with the reason |
+
+To start your own plant, open the file in Excel, delete the example rows on the *Nós*,
+*Trechos*, *Válvulas* and *Produtos* sheets (only the yellow data cells, not the grey check
+columns) and fill in your own; or build it in the editor.
 
 ## The workbook
 
@@ -101,7 +127,7 @@ already starts with the area digit. No accents, no spaces.
 ## valve_router.py
 
 ```bash
-python valve_router.py valvulas_m.xlsx
+python valve_router.py valve_database.xlsx
 ```
 
 Without `--from` / `--to` it asks for the start point, end point and product.
@@ -119,7 +145,7 @@ Without `--from` / `--to` it asks for the start point, end point and product.
 Example:
 
 ```bash
-python valve_router.py valvulas_m.xlsx --from TQ-1 --to RF-02 --product Água --alternatives 3 --save "Água TQ-1 para RF-02"
+python valve_router.py valve_database.xlsx --from TQ-101 --to RE-201 --product Leite --alternatives 2 --save "Leite TQ-101 para RE-201"
 ```
 
 For each route it lists the valves to open, the valves to close to isolate every branch
@@ -130,7 +156,7 @@ item, line directions or items out of service).
 ## valve_visualizer.py
 
 ```bash
-python valve_visualizer.py valvulas_m.xlsx -o diagrama.html --open
+python valve_visualizer.py valve_database.xlsx -o diagrama.html --open
 ```
 
 | Option | |
@@ -155,7 +181,7 @@ large plant) and the one with the fewest crossings for its size is kept.
 ## valve_editor.py
 
 ```bash
-python valve_editor.py valvulas_m.xlsx
+python valve_editor.py valve_database.xlsx
 ```
 
 Opens the editor in the browser (at `http://127.0.0.1:8765/`; `--port` to change it,
