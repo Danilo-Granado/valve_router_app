@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Editor de válvulas</title>
+<script src="__VIS_SRC__"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font-family: Arial, Helvetica, sans-serif; color: #1f1f1f; background: #fafafa; font-size: 13px; }
+  #wrap { display: flex; flex-direction: column; height: 100%; }
+  #bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 8px; border-bottom: 1px solid #ddd; background: #fff; }
+  #bar .sep { width: 1px; height: 22px; background: #ddd; margin: 0 2px; }
+  #file { font-weight: bold; margin-right: 4px; }
+  #dirty { color: #c0392b; font-size: 12px; min-width: 70px; }
+  #hint { padding: 5px 10px; background: #FFF4D6; border-bottom: 1px solid #F0DC9C; font-size: 12px; }
+  #body { flex: 1; display: flex; min-height: 0; }
+  #side { width: 330px; min-width: 330px; display: flex; flex-direction: column; border-right: 1px solid #ddd; background: #fff; }
+  #tabs { display: flex; border-bottom: 1px solid #ddd; }
+  #tabs button { flex: 1; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 2px; font-size: 12px; }
+  #tabs button.on { border-bottom-color: #1F3864; color: #1F3864; font-weight: bold; background: none; }
+  .panel { flex: 1; overflow-y: auto; padding: 10px; display: none; }
+  .panel.on { display: block; }
+  #net { flex: 1; min-width: 0; position: relative; }
+  #net.crosshair canvas { cursor: crosshair; }
+  h3 { font-size: 14px; margin: 0 0 8px; }
+  .muted { color: #777; font-size: 12px; }
+  .row { margin-bottom: 7px; }
+  .row label { display: block; font-size: 11px; color: #555; margin-bottom: 2px; }
+  .row input, .row select, .row textarea { width: 100%; }
+  .inline { display: flex; gap: 6px; align-items: center; }
+  .inline > * { flex: 1; }
+  button, input, select, textarea { font: inherit; font-size: 13px; padding: 4px 7px; }
+  input, select, textarea { border: 1px solid #c8c8c8; border-radius: 4px; background: #fff; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid #9DC3E6; outline-offset: 0; }
+  input.bad { border-color: #E04848; background: #FFF1F1; }
+  button { cursor: pointer; border: 1px solid #bbb; background: #f4f4f4; border-radius: 4px; }
+  button:hover { border-color: #1F3864; }
+  button.on { background: #1F3864; color: #fff; border-color: #1F3864; }
+  button.primary { background: #1F3864; color: #fff; border-color: #1F3864; }
+  button.danger { background: #fff; color: #B42318; border-color: #E8A39B; }
+  button.link { border: 0; background: none; color: #1F5FBF; padding: 0 2px; text-decoration: underline; }
+  button:disabled { opacity: .45; cursor: default; }
+  .box { border: 1px solid #e3e3e3; border-radius: 6px; padding: 8px; margin-bottom: 10px; }
+  .checks label { display: inline-flex; align-items: center; gap: 4px; margin: 2px 10px 2px 0; font-size: 13px; color: #1f1f1f; }
+  .checks input { width: auto; }
+  .vlist { list-style: none; margin: 4px 0; padding: 0; }
+  .vlist li { display: flex; align-items: center; gap: 4px; padding: 3px 0; border-bottom: 1px dashed #eee; }
+  .vlist li .grow { flex: 1; }
+  .vlist button.small { padding: 0 6px; font-size: 12px; }
+  .issue { padding: 5px 6px; border-radius: 4px; margin-bottom: 4px; cursor: pointer; }
+  .issue.error { background: #FDECEC; border-left: 3px solid #E04848; }
+  .issue.warning { background: #FFF6E0; border-left: 3px solid #E8A33D; }
+  .issue:hover { filter: brightness(.97); }
+  .badge { display: inline-block; min-width: 16px; padding: 0 4px; border-radius: 8px; background: #E04848; color: #fff; font-size: 10px; line-height: 15px; margin-left: 3px; }
+  .badge.warn { background: #E8A33D; }
+  .rcard { border: 1px solid #ddd; border-radius: 6px; padding: 6px 8px; margin-bottom: 6px; cursor: pointer; }
+  .rcard.on { border-color: #F28C28; box-shadow: 0 0 0 2px #FBD3AE; }
+  .rv { margin: 5px 0; }
+  .tag { font-family: Consolas, Menlo, monospace; font-size: 12px; }
+  .warn { color: #a33; margin-top: 4px; }
+  /* legend (same look as valve_visualizer) */
+  .lg { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+  .sw { display: inline-block; width: 16px; height: 16px; border: 2px solid #404040; flex: none; }
+  .sw.dot { width: 9px; height: 9px; border-radius: 50%; margin: 0 3.5px; }
+  .sw.circle { border-radius: 50%; }
+  .sw.database { border-radius: 4px / 6px; }
+  .sw.diamond { transform: rotate(45deg) scale(.8); }
+  .sw.hexagon { clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0 50%); border-width: 0; }
+  .sw.triangle, .sw.triangleDown { width: 0; height: 0; border: 8px solid transparent; border-bottom: 14px solid #404040; border-top: 0; }
+  .sw.triangleDown { border-bottom: 0; border-top: 14px solid #5E3B1C; }
+  .ar { display: inline-block; width: 34px; color: #7F7F7F; font-size: 11px; letter-spacing: -1px; flex: none; }
+  .ln { display: inline-block; width: 26px; border-top: 2px solid #7F7F7F; flex: none; }
+  .vis-tooltip { white-space: pre-line; font-family: Arial, sans-serif !important; font-size: 12px !important; }
+  /* dialogs and messages */
+  #overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 20; }
+  #overlay[hidden] { display: none; }
+  #dialog { background: #fff; border-radius: 8px; padding: 14px; width: 380px; max-width: calc(100vw - 20px); box-shadow: 0 8px 30px rgba(0,0,0,.25); }
+  #dialog .actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
+  #dlgErr { color: #B42318; font-size: 12px; min-height: 14px; }
+  #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: #1F3864; color: #fff; padding: 8px 14px; border-radius: 6px; z-index: 30; max-width: 80vw; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+  #toast.error { background: #B42318; }
+  #toast.warn { background: #9A6700; }
+  #toast[hidden] { display: none; }
+  #nolib { padding: 30px; color: #a33; font-size: 14px; }
+  kbd { border: 1px solid #ccc; border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; font-size: 11px; background: #f7f7f7; }
+</style></head>
+<body><div id="wrap">
+  <div id="bar">
+    <span id="file">…</span><span id="dirty"></span>
+    <div class="sep"></div>
+    <button id="mSelect" title="Selecionar e mover (Esc)">↖ Selecionar</button>
+    <button id="mNode" title="Clique numa área vazia para posicionar (N)">＋ Equipamento</button>
+    <button id="mEdge" title="Arraste de um nó até outro (T)">＋ Trecho</button>
+    <button id="mValve" title="Clique sobre um trecho (V)">＋ Válvula</button>
+    <button id="bDelete" title="Excluir seleção (Delete)">🗑 Excluir</button>
+    <div class="sep"></div>
+    <button id="bUndo" title="Desfazer (Ctrl+Z)">↶</button>
+    <button id="bRedo" title="Refazer (Ctrl+Y)">↷</button>
+    <div class="sep"></div>
+    <button id="bSave" class="primary" title="Salvar na planilha (Ctrl+S)">💾 Salvar</button>
+    <button id="bReload" title="Descartar alterações e reler a planilha">⟳ Recarregar</button>
+    <div class="sep"></div>
+    <button id="bLayout" title="Reposicionar tudo automaticamente: um bloco por área, fluxo da esquerda para a direita, mínimo de cruzamentos">Reorganizar</button>
+    <button id="bFit">Ajustar à tela</button>
+    <input id="q" list="allTags" placeholder="Buscar tag…" style="width:130px">
+    <datalist id="allTags"></datalist>
+  </div>
+  <div id="hint" hidden></div>
+  <div id="body">
+    <div id="side">
+      <div id="tabs">
+        <button data-tab="props" class="on">Propriedades</button>
+        <button data-tab="route">Rota</button>
+        <button data-tab="issues">Verificação<span id="issueBadge"></span></button>
+        <button data-tab="products">Produtos</button>
+        <button data-tab="legend">Legenda</button>
+      </div>
+      <div class="panel on" id="p-props"></div>
+      <div class="panel" id="p-route"></div>
+      <div class="panel" id="p-issues"></div>
+      <div class="panel" id="p-products"></div>
+      <div class="panel" id="p-legend"></div>
+    </div>
+    <div id="net"></div>
+  </div>
+</div>
+<div id="overlay" hidden><div id="dialog"><h3 id="dlgTitle"></h3><div id="dlgBody"></div><div id="dlgErr"></div>
+  <div class="actions"><button id="dlgCancel">Cancelar</button><button id="dlgOk" class="primary">OK</button></div></div></div>
+<div id="toast" hidden></div>
+<datalist id="pointTags"></datalist>
+
+<script>__DIAGRAM_JS__</script>
+<script>
+"use strict";
+// ---------------------------------------------------------------- state
+let model = null;        // {nodes, segments, valves, products, positions}
+let info = null;         // {file, sheets, portuguese, options, codes}
+let diagram = null;      // last analysis: {nodes, edges, legend, issues}
+let savedSnapshot = "";
+let undoStack = [], redoStack = [];
+let sel = null;          // {kind: "node" | "valve" | "segment", id}
+let mode = "select";
+let route = null;        // {req, routes, active} | {req, none} | {req, error}
+let routeStale = false;
+let network = null, nodesDS = null, edgesDS = null, router = null, pendingRoute = null;
+let lastArea = "", lastType = "", dragBefore = null, refreshSeq = 0;
+const TAG_RE = /^[A-Z0-9]+(-[A-Z0-9]+)*$/;
+const $ = id => document.getElementById(id);
+
+// ---------------------------------------------------------------- small helpers
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === undefined || v === null || v === false) continue;
+    if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (k === "class") el.className = v;
+    else if (k === "dataset") Object.assign(el.dataset, v);
+    else if (k in el && k !== "list") el[k] = v;
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat()) if (kid !== null && kid !== undefined && kid !== false) el.append(kid);
+  return el;
+}
+function selectEl(options, value, attrs) {
+  const s = h("select", attrs);
+  for (const o of options) {
+    const [val, label] = Array.isArray(o) ? o : [o, o];
+    s.append(h("option", { value: val, selected: val === value }, label));
+  }
+  if (value && !options.some(o => (Array.isArray(o) ? o[0] : o) === value)) s.append(h("option", { value, selected: true }, value + " (?)"));
+  return s;
+}
+function field(label, input) { return h("div", { class: "row" }, h("label", {}, label), input); }
+function tagLink(tag) { return h("button", { class: "link tag", onclick: () => selectById(tag, true) }, tag); }
+function num(v) { const n = parseFloat(String(v).replace(",", ".")); return isNaN(n) ? Infinity : n; }
+function opt(name) { return (info.options[name] || []); }
+function snapshot() { return JSON.stringify(model); }
+function isNode(t) { return model.nodes.some(n => n.tag === t); }
+function isValve(t) { return model.valves.some(v => v.tag === t); }
+function getNode(t) { return model.nodes.find(n => n.tag === t); }
+function getValve(t) { return model.valves.find(v => v.tag === t); }
+function getSeg(t) { return model.segments.find(s => s.tag === t); }
+function valvesOf(seg) { return model.valves.filter(v => v.segment === seg).sort((a, b) => num(a.order) - num(b.order)); }
+function renumber(seg) { valvesOf(seg).forEach((v, i) => { v.order = i + 1; }); }
+function chainOf(seg) { const s = getSeg(seg); return [s.from, ...valvesOf(seg).map(v => v.tag), s.to]; }
+function segOfEdge(id) { return id.slice(0, id.lastIndexOf("#")); }
+function allTags() { return new Set([...model.nodes, ...model.segments, ...model.valves].map(x => x.tag)); }
+function trailing(tag) { const m = /(\d+)$/.exec(tag); return m ? parseInt(m[1], 10) : 0; }
+
+function toast(msg, kind = "", ms) {
+  const t = $("toast");
+  t.textContent = msg; t.className = kind; t.hidden = false;
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => { t.hidden = true; }, ms || (kind === "error" ? 7000 : 3500));
+}
+
+async function api(path, body) {
+  const opts = body === undefined ? {} : {
+    method: "POST", body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json", "X-Valve-Editor": "1" } };
+  let res;
+  try { res = await fetch(path, opts); }
+  catch (e) { throw new Error("Sem conexão com o editor. O programa valve_editor.py ainda está aberto?"); }
+  const data = await res.json().catch(() => ({ error: `Erro ${res.status}` }));
+  if (!res.ok && data.error) throw new Error(data.error);
+  return data;
+}
+
+// ---------------------------------------------------------------- dialogs
+let dlgResolve = null, dlgOk = null;
+function openDialog(title, body, { okText = "OK", danger = false, onOk = () => true } = {}) {
+  $("dlgTitle").textContent = title;
+  $("dlgBody").replaceChildren(body);
+  $("dlgErr").textContent = "";
+  $("dlgOk").textContent = okText;
+  $("dlgOk").className = danger ? "danger" : "primary";
+  $("overlay").hidden = false;
+  dlgOk = onOk;
+  setTimeout(() => { const f = $("dlgBody").querySelector("input, select"); (f || $("dlgOk")).focus(); }, 0);
+  return new Promise(res => { dlgResolve = res; });
+}
+function closeDialog(result) { $("overlay").hidden = true; if (dlgResolve) dlgResolve(result); dlgResolve = null; }
+$("dlgCancel").onclick = () => closeDialog(false);
+$("dlgOk").onclick = () => {
+  const r = dlgOk();
+  if (r === true) closeDialog(true); else if (typeof r === "string") $("dlgErr").textContent = r;
+};
+$("dialog").addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.tagName !== "TEXTAREA") { e.preventDefault(); $("dlgOk").click(); }
+  if (e.key === "Escape") { e.preventDefault(); closeDialog(false); }
+});
+function confirmDialog(title, message, okText = "Confirmar", danger = true) {
+  return openDialog(title, h("div", { style: "white-space: pre-line" }, message), { okText, danger });
+}
+
+// ---------------------------------------------------------------- tags
+function normTag(s) { return String(s || "").trim().toUpperCase().replace(/\s+/g, "-"); }
+function tagProblem(tag, oldTag) {
+  if (!tag) return "Informe o tag.";
+  if (!TAG_RE.test(tag)) return "Use só letras sem acento, números e hífen (ex.: TQ-101).";
+  if (tag !== oldTag && allTags().has(tag)) return `O tag ${tag} já existe.`;
+  return null;
+}
+function nextNodeTag(type) {
+  const code = (info.codes.node[type] || {}).code || "EQ";
+  const used = model.nodes.filter(n => n.tag.split("-").includes(code)).map(n => trailing(n.tag));
+  let n = used.length ? Math.max(...used) + 1 : 101;
+  while (allTags().has(`${code}-${n}`)) n++;
+  return `${code}-${n}`;
+}
+function nextValveTag(body) {
+  const code = (info.codes.valve[body] || {}).code || "V";
+  // valve numbers never repeat, whatever the body type
+  let n = model.valves.length ? Math.max(...model.valves.map(v => trailing(v.tag))) + 1 : 101;
+  const nums = new Set(model.valves.map(v => trailing(v.tag)));
+  while (nums.has(n) || allTags().has(`${code}-${n}`)) n++;
+  return `${code}-${n}`;
+}
+function nextSegTag() {
+  let n = model.segments.length ? Math.max(...model.segments.map(s => trailing(s.tag))) + 1 : 1;
+  while (allTags().has(`TR-${String(n).padStart(3, "0")}`)) n++;
+  return `TR-${String(n).padStart(3, "0")}`;
+}
+
+// ---------------------------------------------------------------- editing core
+function pushUndo() { undoStack.push(snapshot()); if (undoStack.length > 150) undoStack.shift(); redoStack = []; }
+function mutate(fn) {
+  pushUndo();
+  fn();
+  if (route) { routeStale = true; }
+  if (sel && !selectionExists()) sel = null;
+  afterChange();
+}
+function afterChange() {
+  updateDirty();
+  renderProps(); renderProducts(); renderRoutePanel(); fillTagLists();
+  refresh();
+}
+function restore(snap) { model = JSON.parse(snap); if (sel && !selectionExists()) sel = null; if (route) routeStale = true; afterChange(); }
+function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); restore(undoStack.pop()); }
+function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); restore(redoStack.pop()); }
+function updateDirty() {
+  const dirty = snapshot() !== savedSnapshot;
+  $("dirty").textContent = dirty ? "● não salvo" : "";
+  document.title = (dirty ? "● " : "") + "Editor de válvulas – " + info.file;
+  $("bUndo").disabled = !undoStack.length; $("bRedo").disabled = !redoStack.length;
+  return dirty;
+}
+function selectionExists() {
+  if (!sel) return false;
+  if (sel.kind === "node") return isNode(sel.id);
+  if (sel.kind === "valve") return isValve(sel.id);
+  return !!getSeg(sel.id);
+}
+
+function renameTag(kind, oldTag, raw) {
+  const tag = normTag(raw);
+  if (tag === oldTag) return true;
+  const problem = tagProblem(tag, oldTag);
+  if (problem) { toast(problem, "error"); return false; }
+  mutate(() => {
+    if (kind === "node") {
+      getNode(oldTag).tag = tag;
+      for (const s of model.segments) { if (s.from === oldTag) s.from = tag; if (s.to === oldTag) s.to = tag; }
+    } else if (kind === "segment") {
+      getSeg(oldTag).tag = tag;
+      for (const v of model.valves) if (v.segment === oldTag) v.segment = tag;
+    } else {
+      getValve(oldTag).tag = tag;
+    }
+    if (model.positions[oldTag]) { model.positions[tag] = model.positions[oldTag]; delete model.positions[oldTag]; }
+    if (sel && sel.id === oldTag) sel.id = tag;
+  });
+  return true;
+}
+
+function placeValve(tag) {
+  // put a valve halfway between its neighbours on the segment
+  const v = getValve(tag), ch = chainOf(v.segment), i = ch.indexOf(tag);
+  const a = model.positions[ch[i - 1]], b = model.positions[ch[i + 1]];
+  if (a && b) model.positions[tag] = [Math.round((a[0] + b[0]) / 2), Math.round((a[1] + b[1]) / 2)];
+}
+
+async function deleteSelected() {
+  if (!sel) return toast("Selecione algo para excluir.");
+  const { kind, id } = sel;
+  if (kind === "node") {
+    const segs = model.segments.filter(s => s.from === id || s.to === id).map(s => s.tag);
+    const vs = model.valves.filter(v => segs.includes(v.segment)).map(v => v.tag);
+    const extra = segs.length ? `\n\nTambém serão excluídos:\n• trechos: ${segs.join(", ")}` + (vs.length ? `\n• válvulas: ${vs.join(", ")}` : "") : "";
+    if (!await confirmDialog("Excluir equipamento", `Excluir ${id}?${extra}`, "Excluir")) return;
+    mutate(() => {
+      model.valves = model.valves.filter(v => !segs.includes(v.segment));
+      model.segments = model.segments.filter(s => !segs.includes(s.tag));
+      model.nodes = model.nodes.filter(n => n.tag !== id);
+      for (const t of [id, ...vs]) delete model.positions[t];
+      sel = null;
+    });
+  } else if (kind === "segment") {
+    const vs = valvesOf(id).map(v => v.tag);
+    if (vs.length && !await confirmDialog("Excluir trecho", `Excluir ${id} e as válvulas ${vs.join(", ")}?`, "Excluir")) return;
+    mutate(() => {
+      model.valves = model.valves.filter(v => v.segment !== id);
+      model.segments = model.segments.filter(s => s.tag !== id);
+      for (const t of vs) delete model.positions[t];
+      sel = null;
+    });
+  } else {
+    const seg = getValve(id).segment;
+    mutate(() => {
+      model.valves = model.valves.filter(v => v.tag !== id);
+      delete model.positions[id];
+      renumber(seg);
+      sel = null;
+    });
+  }
+}
+
+// ---------------------------------------------------------------- adding things
+function addNodeAt(pos) {
+  const types = opt("node_type");
+  let tagTouched = false;
+  const type = selectEl(types, lastType || types[0]);
+  const tag = h("input", { value: nextNodeTag(type.value), oninput: () => { tagTouched = true; } });
+  const passDefault = t => { const p = (info.codes.node[t] || {}).pass; return opt("pass").includes(p) ? p : ""; };
+  const pass = selectEl([["", "Padrão do tipo"], ...opt("pass")], passDefault(type.value));
+  type.onchange = () => { if (!tagTouched) tag.value = nextNodeTag(type.value); pass.value = passDefault(type.value); };
+  const desc = h("input", {});
+  const area = h("input", { value: lastArea });
+  const body = h("div", {}, field("Tipo", type), field("Tag", tag), field("Descrição", desc),
+    h("div", { class: "inline" }, field("Área", area), field("Permite passagem", pass)));
+  openDialog("Novo equipamento", body, { okText: "Adicionar", onOk: () => {
+    const t = normTag(tag.value), problem = tagProblem(t);
+    if (problem) return problem;
+    lastType = type.value; lastArea = area.value.trim();
+    mutate(() => {
+      model.nodes.push({ tag: t, type: type.value, desc: desc.value.trim(), area: lastArea, pass: pass.value,
+                         status: opt("node_status")[0] || "", notes: "" });
+      model.positions[t] = [Math.round(pos.x), Math.round(pos.y)];
+      sel = { kind: "node", id: t };
+    });
+    return true;
+  } });
+}
+
+function addValveOn(edgeId, pos) {
+  const seg = segOfEdge(edgeId), index = parseInt(edgeId.slice(edgeId.lastIndexOf("#") + 1), 10);
+  if (!getSeg(seg)) return;
+  const bodies = opt("body");
+  let tagTouched = false;
+  const body = selectEl(bodies, bodies[0]);
+  const tag = h("input", { value: nextValveTag(body.value), oninput: () => { tagTouched = true; } });
+  const isCheck = b => ((info.codes.valve[b] || {}).code || "").toUpperCase() === "VRT" || /reten|check/i.test(b);
+  const defaultAct = b => { const a = (info.codes.valve[b] || {}).actuation; return opt("actuation").includes(a) ? a : opt("actuation")[0]; };
+  const defaultNormal = b => isCheck(b) ? "" : (opt("normal").find(n => /fech|closed/i.test(n)) || "");
+  const act = selectEl(opt("actuation"), defaultAct(body.value));
+  const normal = selectEl([["", "—"], ...opt("normal")], defaultNormal(body.value));
+  body.onchange = () => {
+    if (!tagTouched) tag.value = nextValveTag(body.value);
+    act.value = defaultAct(body.value); normal.value = defaultNormal(body.value);
+  };
+  const s = getSeg(seg);
+  const where = h("div", { class: "muted", style: "margin-bottom:8px" },
+    `No trecho ${seg} (${s.from} → ${s.to}), posição ${index + 1}`);
+  const bodyEl = h("div", {}, where, field("Tipo de corpo", body), field("Tag", tag),
+    h("div", { class: "inline" }, field("Acionamento", act), field("Posição normal", normal)));
+  openDialog("Nova válvula", bodyEl, { okText: "Adicionar", onOk: () => {
+    const t = normTag(tag.value), problem = tagProblem(t);
+    if (problem) return problem;
+    mutate(() => {
+      const list = valvesOf(seg);
+      const v = { tag: t, segment: seg, order: 0, body: body.value, actuation: act.value,
+                  status: opt("valve_status")[0] || "", normal: normal.value, notes: "" };
+      list.splice(index, 0, v);
+      model.valves.push(v);
+      list.forEach((x, i) => { x.order = i + 1; });
+      if (pos) model.positions[t] = [Math.round(pos.x), Math.round(pos.y)]; else placeValve(t);
+      sel = { kind: "valve", id: t };
+    });
+    return true;
+  } });
+}
+
+function addSegment(from, to) {
+  if (VD.isBend(from) || VD.isBend(to)) return toast("Arraste de um equipamento ou derivação até outro.", "warn");
+  if (from === to) return toast("Um trecho liga dois nós diferentes.", "warn");
+  if (isValve(from) || isValve(to))
+    return toast("Trechos ligam equipamentos e derivações. Para pôr uma válvula num trecho, use ＋ Válvula.", "warn", 6000);
+  const tag = nextSegTag();
+  mutate(() => {
+    model.segments.push({ tag, from, to, direction: opt("direction")[0] || "", products: [], cost: 1,
+                          status: opt("seg_status")[0] || "", notes: "" });
+    sel = { kind: "segment", id: tag };
+  });
+  toast(`Trecho ${tag} criado: ${from} → ${to}. Ajuste sentido, produtos e custo ao lado.`);
+}
+
+// ---------------------------------------------------------------- properties panel
+function onChange(el, fn) { el.addEventListener("change", () => fn(el.value)); return el; }
+function setField(getter, key, cast = v => v) {
+  return value => mutate(() => { getter()[key] = cast(value); });
+}
+
+function renderProps() {
+  const p = $("p-props");
+  const focusKey = document.activeElement && p.contains(document.activeElement) ? document.activeElement.dataset.key : null;
+  p.replaceChildren();
+  if (!sel) {
+    p.append(h("h3", {}, "Nada selecionado"),
+      h("div", { class: "box" },
+        h("div", {}, `${model.nodes.length} equipamentos/derivações, ${model.segments.length} trechos, ${model.valves.length} válvulas, ${model.products.length} produtos.`)),
+      h("div", { class: "muted", style: "line-height:1.6" },
+        h("b", {}, "Como editar"), h("br"),
+        "＋ Equipamento: clique numa área vazia do diagrama.", h("br"),
+        "＋ Trecho: arraste de um nó até outro, no sentido do fluxo.", h("br"),
+        "＋ Válvula: clique sobre a linha do trecho, no ponto onde ela fica.", h("br"),
+        "Clique num item para editar; arraste para mover.", h("br"), h("br"),
+        h("b", {}, "Atalhos"), h("br"),
+        h("kbd", {}, "N"), " equipamento  ", h("kbd", {}, "T"), " trecho  ", h("kbd", {}, "V"), " válvula  ", h("kbd", {}, "Esc"), " selecionar", h("br"),
+        h("kbd", {}, "Delete"), " excluir  ", h("kbd", {}, "Ctrl+Z"), " desfazer  ", h("kbd", {}, "Ctrl+S"), " salvar"));
+    return;
+  }
+  if (sel.kind === "node") renderNodeProps(p, getNode(sel.id));
+  else if (sel.kind === "segment") renderSegProps(p, getSeg(sel.id));
+  else renderValveProps(p, getValve(sel.id));
+  if (focusKey) { const el = p.querySelector(`[data-key="${focusKey}"]`); if (el) el.focus(); }
+}
+
+function tagInput(kind, tag) {
+  const el = h("input", { value: tag, dataset: { key: "tag" }, class: "tag" });
+  el.addEventListener("change", () => { if (!renameTag(kind, tag, el.value)) el.value = tag; });
+  return el;
+}
+function deleteButton(label) { return h("button", { class: "danger", onclick: deleteSelected, style: "margin-top:6px" }, label); }
+
+function renderNodeProps(p, n) {
+  const N = () => getNode(sel.id);
+  const passLabel = (info.codes.node[n.type] || {}).pass;
+  const segs = model.segments.filter(s => s.from === n.tag || s.to === n.tag);
+  p.append(h("h3", {}, "Equipamento / nó"),
+    field("Tag", tagInput("node", n.tag)),
+    field("Tipo", onChange(selectEl(opt("node_type"), n.type, { dataset: { key: "type" } }), setField(N, "type"))),
+    field("Descrição", onChange(h("input", { value: n.desc, dataset: { key: "desc" } }), setField(N, "desc", v => v.trim()))),
+    h("div", { class: "inline" },
+      field("Área", onChange(h("input", { value: n.area, dataset: { key: "area" } }), setField(N, "area", v => v.trim()))),
+      field("Permite passagem", onChange(selectEl([["", "Padrão" + (passLabel ? ` (${passLabel})` : "")], ...opt("pass")], n.pass, { dataset: { key: "pass" } }), setField(N, "pass")))),
+    field("Status", onChange(selectEl(opt("node_status"), n.status, { dataset: { key: "status" } }), setField(N, "status"))),
+    field("Observações", onChange(h("input", { value: n.notes, dataset: { key: "notes" } }), setField(N, "notes", v => v.trim()))),
+    h("div", { class: "box" }, h("b", {}, `Trechos ligados (${segs.length})`),
+      segs.length ? h("ul", { class: "vlist" }, segs.map(s => h("li", {}, tagLink(s.tag),
+        h("span", { class: "grow muted" }, s.from === n.tag ? `→ ${s.to}` : `← ${s.from}`))))
+        : h("div", { class: "muted" }, "Nenhum. Use ＋ Trecho para ligar este nó.")),
+    deleteButton("Excluir equipamento"));
+}
+
+function renderSegProps(p, s) {
+  const S = () => getSeg(sel.id);
+  const nodeTags = model.nodes.map(n => n.tag).sort();
+  const prods = h("div", { class: "checks" }, model.products.map(pr => {
+    const cb = h("input", { type: "checkbox", checked: s.products.includes(pr.name) });
+    cb.onchange = () => mutate(() => {
+      const seg = S(); const set = new Set(seg.products);
+      cb.checked ? set.add(pr.name) : set.delete(pr.name);
+      seg.products = model.products.map(x => x.name).filter(x => set.has(x));
+    });
+    return h("label", {}, cb, pr.name);
+  }));
+  const vs = valvesOf(s.tag);
+  const move = (i, d) => mutate(() => {
+    const list = valvesOf(sel.id); const [v] = list.splice(i, 1); list.splice(i + d, 0, v);
+    list.forEach((x, k) => { x.order = k + 1; }); placeValve(v.tag);
+  });
+  p.append(h("h3", {}, "Trecho"),
+    field("Tag", tagInput("segment", s.tag)),
+    h("div", { class: "inline" },
+      field("Origem", onChange(selectEl(nodeTags, s.from, { dataset: { key: "from" } }), setField(S, "from"))),
+      field("Destino", onChange(selectEl(nodeTags, s.to, { dataset: { key: "to" } }), setField(S, "to")))),
+    h("div", { class: "row" }, h("button", { onclick: () => mutate(() => {
+      const seg = S(); [seg.from, seg.to] = [seg.to, seg.from];
+      const list = valvesOf(seg.tag).reverse(); list.forEach((v, k) => { v.order = k + 1; });
+    }) }, "⇄ Inverter origem e destino")),
+    h("div", { class: "inline" },
+      field("Sentido", onChange(selectEl(opt("direction"), s.direction, { dataset: { key: "direction" } }), setField(S, "direction"))),
+      field("Custo", onChange(h("input", { type: "number", step: "any", min: "0", value: s.cost, dataset: { key: "cost" } }), setField(S, "cost", v => v === "" ? "" : Number(v))))),
+    field("Produtos permitidos (nenhum marcado = qualquer produto)", prods),
+    field("Status", onChange(selectEl(opt("seg_status"), s.status, { dataset: { key: "status" } }), setField(S, "status"))),
+    field("Observações", onChange(h("input", { value: s.notes, dataset: { key: "notes" } }), setField(S, "notes", v => v.trim()))),
+    h("div", { class: "box" }, h("b", {}, `Válvulas, da origem ao destino (${vs.length})`),
+      h("ul", { class: "vlist" }, vs.map((v, i) => h("li", {},
+        h("span", { class: "muted" }, `${i + 1}.`), h("span", { class: "grow" }, tagLink(v.tag), h("span", { class: "muted" }, " " + (v.body || ""))),
+        h("button", { class: "small", title: "Mover para perto da origem", disabled: i === 0, onclick: () => move(i, -1) }, "↑"),
+        h("button", { class: "small", title: "Mover para perto do destino", disabled: i === vs.length - 1, onclick: () => move(i, 1) }, "↓")))),
+      h("button", { onclick: () => addValveOn(`${s.tag}#${vs.length}`, null) }, "＋ Válvula no fim do trecho")),
+    deleteButton("Excluir trecho"));
+}
+
+function renderValveProps(p, v) {
+  const V = () => getValve(sel.id);
+  const s = getSeg(v.segment);
+  const count = valvesOf(v.segment).length;
+  const moveTo = (seg, pos) => mutate(() => {
+    const val = V(), old = val.segment;
+    const list = valvesOf(seg).filter(x => x !== val);
+    list.splice(Math.min(pos, list.length), 0, val);
+    val.segment = seg;
+    list.forEach((x, k) => { x.order = k + 1; });
+    if (old !== seg) renumber(old);
+    placeValve(val.tag);
+  });
+  p.append(h("h3", {}, "Válvula"),
+    field("Tag", tagInput("valve", v.tag)),
+    h("div", { class: "inline" },
+      field("Trecho", onChange(selectEl(model.segments.map(x => x.tag).sort(), v.segment, { dataset: { key: "segment" } }),
+        seg => moveTo(seg, valvesOf(seg).length))),
+      field("Posição", onChange(selectEl(Array.from({ length: count }, (_, i) => String(i + 1)), String(valvesOf(v.segment).indexOf(v) + 1), { dataset: { key: "order" } }),
+        val => moveTo(v.segment, parseInt(val, 10) - 1)))),
+    s ? h("div", { class: "muted", style: "margin:-3px 0 8px" }, `${s.from} → ${s.to}  (posição 1 = mais perto de ${s.from})`) : "",
+    h("div", { class: "inline" },
+      field("Tipo de corpo", onChange(selectEl(opt("body"), v.body, { dataset: { key: "body" } }), setField(V, "body"))),
+      field("Acionamento", onChange(selectEl(opt("actuation"), v.actuation, { dataset: { key: "actuation" } }), setField(V, "actuation")))),
+    h("div", { class: "inline" },
+      field("Status", onChange(selectEl(opt("valve_status"), v.status, { dataset: { key: "status" } }), setField(V, "status"))),
+      field("Posição normal", onChange(selectEl([["", "—"], ...opt("normal")], v.normal, { dataset: { key: "normal" } }), setField(V, "normal")))),
+    field("Observações", onChange(h("input", { value: v.notes, dataset: { key: "notes" } }), setField(V, "notes", x => x.trim()))),
+    deleteButton("Excluir válvula"));
+}
+
+// ---------------------------------------------------------------- products panel
+function renderProducts() {
+  const p = $("p-products");
+  p.replaceChildren(h("h3", {}, "Produtos"),
+    h("div", { class: "muted", style: "margin-bottom:8px" }, "Os trechos escolhem quais destes produtos aceitam. Evite vírgulas nos nomes."));
+  for (const pr of model.products) {
+    const name = h("input", { value: pr.name });
+    name.onchange = () => {
+      const nv = name.value.trim(), old = pr.name;
+      if (nv === old) return;
+      if (!nv || nv.includes(",") || model.products.some(x => x.name === nv)) { name.value = old; return toast("Nome vazio, com vírgula ou repetido.", "error"); }
+      mutate(() => {
+        model.products.find(x => x.name === old).name = nv;
+        for (const s of model.segments) s.products = s.products.map(x => x === old ? nv : x);
+      });
+    };
+    const notes = h("input", { value: pr.notes, placeholder: "Observações" });
+    notes.onchange = () => mutate(() => { model.products.find(x => x.name === pr.name).notes = notes.value.trim(); });
+    const del = h("button", { class: "danger", title: "Excluir produto", onclick: async () => {
+      const used = model.segments.filter(s => s.products.includes(pr.name));
+      const only = used.filter(s => s.products.length === 1).map(s => s.tag);
+      if (only.length) return toast(`${pr.name} é o único produto permitido em ${only.join(", ")}. Mude esses trechos antes.`, "warn", 6000);
+      const msg = used.length ? `Excluir ${pr.name}? Ele sai da lista dos trechos ${used.map(s => s.tag).join(", ")}.` : `Excluir ${pr.name}?`;
+      if (!await confirmDialog("Excluir produto", msg, "Excluir")) return;
+      mutate(() => {
+        model.products = model.products.filter(x => x.name !== pr.name);
+        for (const s of model.segments) s.products = s.products.filter(x => x !== pr.name);
+      });
+    } }, "✕");
+    p.append(h("div", { class: "inline row" }, name, notes, h("span", { style: "flex:none" }, del)));
+  }
+  const add = h("input", { placeholder: "Novo produto" });
+  const addIt = () => {
+    const nv = add.value.trim();
+    if (!nv) return;
+    if (nv.includes(",") || model.products.some(x => x.name === nv)) return toast("Nome com vírgula ou repetido.", "error");
+    mutate(() => model.products.push({ name: nv, notes: "" }));
+  };
+  add.addEventListener("keydown", e => { if (e.key === "Enter") addIt(); });
+  p.append(h("div", { class: "inline row", style: "margin-top:10px" }, add, h("button", { style: "flex:none", onclick: addIt }, "Adicionar")));
+}
+
+// ---------------------------------------------------------------- issues + legend
+function renderIssues() {
+  const issues = diagram ? diagram.issues : [];
+  const errors = issues.filter(i => i.level === "error").length, warns = issues.length - errors;
+  const badge = $("issueBadge");
+  badge.replaceChildren();
+  if (errors) badge.append(h("span", { class: "badge" }, errors));
+  else if (warns) badge.append(h("span", { class: "badge warn" }, warns));
+  const p = $("p-issues");
+  p.replaceChildren(h("h3", {}, "Verificação"));
+  if (!issues.length) return p.append(h("div", { class: "box" }, "✔ Nenhum problema encontrado."));
+  p.append(h("div", { class: "muted", style: "margin-bottom:8px" },
+    `${errors} erro(s) impedem o cálculo de rotas; ${warns} aviso(s). Clique para localizar.`));
+  for (const i of issues)
+    p.append(h("div", { class: `issue ${i.level}`, onclick: () => i.tag && selectById(i.tag, true) }, i.msg));
+}
+
+// ---------------------------------------------------------------- route panel
+function renderRoutePanel() {
+  const p = $("p-route");
+  const r = route ? route.req : {};
+  p.replaceChildren(h("h3", {}, "Rota"));
+  const start = h("input", { list: "pointTags", value: r.start || "", placeholder: "ex.: TQ-101" });
+  const end = h("input", { list: "pointTags", value: r.end || "", placeholder: "ex.: RE-202" });
+  const product = selectEl([["", "(qualquer produto)"], ...model.products.map(x => x.name)], r.product || "");
+  const alts = h("input", { type: "number", min: "1", max: "5", value: r.alternatives || 1 });
+  const avoid = h("input", { value: (r.avoid || []).join(", "), placeholder: "tags separados por vírgula" });
+  const penalty = h("input", { type: "number", min: "0", step: "any", value: r.penalty || 0 });
+  const go = async () => {
+    const req = { start: normTag(start.value), end: normTag(end.value), product: product.value,
+                  alternatives: Math.max(1, Math.min(5, parseInt(alts.value, 10) || 1)),
+                  avoid: avoid.value.split(",").map(normTag).filter(Boolean), penalty: parseFloat(penalty.value) || 0 };
+    if (!req.start || !req.end) return toast("Informe origem e destino.", "warn");
+    try {
+      const res = await api("/api/route", { model, ...req });
+      route = { req, ...res, active: res.routes ? 0 : null };
+      routeStale = false;
+      renderRoutePanel(); refresh();
+    } catch (e) { toast(e.message, "error"); }
+  };
+  p.append(
+    h("div", { class: "inline" }, field("Origem", start), field("Destino (igual à origem = recirculação)", end)),
+    field("Produto", product),
+    h("div", { class: "inline" }, field("Alternativas", alts), field("Penalidade por válvula", penalty)),
+    field("Evitar", avoid),
+    h("div", { class: "inline", style: "margin-bottom:10px" },
+      h("button", { class: "primary", onclick: go }, "Calcular rota"),
+      h("button", { onclick: () => { route = null; routeStale = false; renderRoutePanel(); refresh(); } }, "Limpar")));
+  if (!route) return;
+  if (routeStale) {
+    p.append(h("div", { class: "box warn" }, "O diagrama mudou depois do cálculo. ", h("button", { class: "link", onclick: go }, "Calcular de novo")));
+    return;
+  }
+  if (route.error) {
+    p.append(h("div", { class: "box warn" }, route.error, ...(route.details || []).map(d => h("div", { class: "muted" }, d))));
+    return;
+  }
+  if (route.none) { p.append(h("div", { class: "box warn", style: "white-space:pre-line" }, route.none.join("\n"))); return; }
+  route.routes.forEach((rt, i) => p.append(h("div", { class: "rcard" + (i === route.active ? " on" : ""),
+    onclick: () => { route.active = i; renderRoutePanel(); refresh(); } },
+    h("b", {}, rt.label), h("span", { class: "muted" }, `  custo ${+rt.cost.toFixed(3)}`), h("br"),
+    h("span", { class: "muted" }, rt.segments.join(" → ")))));
+  const rt = route.routes[route.active];
+  const tags = (list, fmt) => list.length ? list.map(fmt).reduce((a, b) => [...a, ", ", ...b]) : ["—"];
+  p.append(h("div", { class: "box" },
+    h("div", { class: "rv" }, h("b", {}, "Caminho: "), rt.path.join(" → ")),
+    h("div", { class: "rv" }, h("b", { style: "color:#3BA55C" }, `■ Abrir (${rt.open.length}): `),
+      ...tags(rt.open, ([t, m]) => [tagLink(t), m ? h("span", { class: "muted" }, " (manual)") : ""])),
+    h("div", { class: "rv" }, h("b", { style: "color:#E04848" }, `■ Fechar (${rt.close.length}): `),
+      ...tags(rt.close, ([t, m, sid, at]) => [tagLink(t), h("span", { class: "muted" }, ` (isola ${sid} em ${at}${m ? ", manual" : ""})`)])),
+    rt.endpoint.length ? h("div", { class: "rv" }, h("b", { style: "color:#2F75D6" }, "■ Extremidade: "), ...tags(rt.endpoint, t => [tagLink(t)])) : "",
+    ...rt.warnings.map(w => h("div", { class: "warn" }, "! " + w))));
+  const def = `${route.req.product || "Qualquer"} ${route.req.start} para ${route.req.end}` + (route.active ? ` (alt. ${route.active})` : "");
+  const name = h("input", { value: def });
+  p.append(h("div", { class: "box" }, field("Nome da operação", name),
+    h("button", { onclick: async () => {
+      if (!name.value.trim()) return toast("Dê um nome à operação.", "warn");
+      if (updateDirty()) {
+        if (!await confirmDialog("Salvar alterações", "A operação é gravada a partir da planilha salva. Salvar as alterações do diagrama agora?", "Salvar e continuar", false)) return;
+        if (!await save()) return;
+      }
+      try {
+        const res = await api("/api/save_operation", { ...route.req, index: route.active, name: name.value.trim() });
+        if (res.error) return toast(res.error, "error");
+        toast(`Operação "${name.value.trim()}" gravada na Matriz de Válvulas.`);
+      } catch (e) { toast(e.message, "error"); }
+    } }, "Gravar na Matriz de Válvulas")));
+}
+
+// ---------------------------------------------------------------- drawing
+function tipEl(t) {
+  // set on the element itself: vis-network's stylesheet forces nowrap on the tooltip box
+  const d = document.createElement("div"); d.textContent = t; d.style.whiteSpace = "pre-line"; return d;
+}
+
+function prepare(nodesIn, edgesIn) {
+  // fill in defaults for every property the server may leave out, so updates fully replace old styling
+  const nodes = nodesIn.map(n => {
+    const o = { ...n, title: tipEl(n.tip), physics: false,
+      shapeProperties: { borderDashes: false, ...(n.shapeProperties || {}) },
+      widthConstraint: n.widthConstraint || false, heightConstraint: n.heightConstraint || false,
+      margin: n.margin || 5, font: { vadjust: 0, ...n.font } };
+    const p = model.positions[n.id];
+    if (p) { o.x = p[0]; o.y = p[1]; }
+    return o;
+  });
+  const edges = edgesIn.map(e => ({ ...e, title: tipEl(e.tip), label: e.label || "", dashes: e.dashes || false }));
+  return { nodes, edges };
+}
+
+function syncDataSet(ds, items) {
+  const ids = new Set(items.map(i => i.id));
+  ds.remove(ds.getIds().filter(id => !ids.has(id)));
+  ds.update(items);
+}
+
+async function draw(nodesIn, edgesIn) {
+  let missing = nodesIn.filter(n => !model.positions[n.id]);
+  if (missing.length && missing.length === nodesIn.length) {
+    await autoLayout();
+    missing = nodesIn.filter(n => !model.positions[n.id]);
+  }
+  for (const n of missing) placeMissing(n.id, edgesIn);
+  const { nodes, edges } = prepare(nodesIn, edgesIn);
+  if (!network) createNetwork();
+  // lines with right angles: each segment piece is drawn through invisible bend points
+  const lines = router.build(nodes, edges, id => model.positions[id]);
+  syncDataSet(nodesDS, [...nodes, ...lines.nodes]);
+  syncDataSet(edgesDS, lines.edges);
+  applySelection();
+  if (mode === "edge") network.addEdgeMode();
+}
+
+function placeMissing(id, edgesIn) {
+  const near = edgesIn.filter(e => e.from === id || e.to === id).map(e => e.from === id ? e.to : e.from)
+    .map(t => model.positions[t]).filter(Boolean);
+  if (near.length) {
+    const x = near.reduce((a, p) => a + p[0], 0) / near.length, y = near.reduce((a, p) => a + p[1], 0) / near.length;
+    model.positions[id] = [Math.round(x + (near.length === 1 ? 60 : 0)), Math.round(y + (near.length === 1 ? 40 : 0))];
+  } else {
+    const c = network ? network.getViewPosition() : { x: 0, y: 0 };
+    model.positions[id] = [Math.round(c.x), Math.round(c.y)];
+  }
+}
+
+async function autoLayout() {
+  // positions worked out by valve_visualizer.area_layout: one band per area, flow from left to right,
+  // as few crossing lines as it can find
+  $("bLayout").disabled = true;
+  const t = setTimeout(() => toast("Reorganizando o diagrama…", "", 15000), 300);
+  try {
+    const res = await api("/api/layout", { model });
+    for (const [id, p] of Object.entries(res.positions || {})) model.positions[id] = p;
+  } catch (e) { toast(e.message, "error"); }
+  finally { clearTimeout(t); $("bLayout").disabled = false; if ($("toast").textContent === "Reorganizando o diagrama…") $("toast").hidden = true; }
+}
+
+function createNetwork() {
+  nodesDS = new vis.DataSet(); edgesDS = new vis.DataSet();
+  network = new vis.Network($("net"), { nodes: nodesDS, edges: edgesDS }, {
+    physics: false, layout: { hierarchical: false },
+    interaction: { hover: true, tooltipDelay: 150, multiselect: false, keyboard: false, selectConnectedEdges: false },
+    // vis leaves edge mode after each new line; draw() puts it back while the segment tool is active
+    manipulation: { enabled: false, addEdge: (data, cb) => { cb(null); addSegment(data.from, data.to); } },
+  });
+  VD.install(network, { nodes: nodesDS, background: "#fafafa" });  // area boxes and line jumps
+  router = VD.orthoRouter(network, nodesDS, edgesDS);
+  network.on("click", ev => {
+    // a click on an invisible bend point of a line counts as a click on that line
+    const nodes = ev.nodes.filter(id => !VD.isBend(id)), bend = ev.nodes.find(VD.isBend);
+    const e = { pointer: ev.pointer, nodes, edges: !nodes.length && bend ? [VD.edgeOfBend(bend)] : ev.edges };
+    if (mode === "node") {
+      if (!e.nodes.length) addNodeAt(e.pointer.canvas);
+      return;
+    }
+    if (mode === "valve") {
+      if (!e.nodes.length && e.edges.length) addValveOn(e.edges[0], e.pointer.canvas);
+      else if (!e.edges.length) toast("Clique sobre a linha de um trecho.", "warn");
+      return;
+    }
+    if (mode === "edge") return;
+    if (e.nodes.length) sel = { kind: isValve(e.nodes[0]) ? "valve" : "node", id: e.nodes[0] };
+    else if (e.edges.length) sel = { kind: "segment", id: segOfEdge(e.edges[0]) };
+    else sel = null;
+    applySelection(); renderProps();
+    if (sel) showTab("props");
+  });
+  const moving = e => e.nodes.filter(id => !VD.isBend(id));
+  network.on("dragStart", e => { if (moving(e).length) dragBefore = snapshot(); });
+  network.on("dragging", e => {  // lines follow the items being dragged
+    const ids = moving(e);
+    if (!ids.length || pendingRoute) return;
+    pendingRoute = requestAnimationFrame(() => { pendingRoute = null; router.reroute(ids); });
+  });
+  network.on("dragEnd", e => {
+    if (!moving(e).length || !dragBefore) return;
+    const pos = network.getPositions(moving(e));
+    let moved = false;
+    for (const [id, p] of Object.entries(pos)) {
+      const old = model.positions[id], np = [Math.round(p.x), Math.round(p.y)];
+      if (!old || old[0] !== np[0] || old[1] !== np[1]) { model.positions[id] = np; moved = true; }
+    }
+    if (moved) { undoStack.push(dragBefore); redoStack = []; updateDirty(); router.reroute(null); }
+    dragBefore = null;
+  });
+}
+
+function applySelection() {
+  if (!network) return;
+  network.unselectAll();
+  if (!sel || !selectionExists()) return;
+  if (sel.kind === "segment") network.selectEdges(edgesDS.getIds().filter(id => segOfEdge(id) === sel.id));
+  else if (nodesDS.get(sel.id)) network.selectNodes([sel.id], false);
+}
+
+function selectById(tag, focus) {
+  if (isNode(tag)) sel = { kind: "node", id: tag };
+  else if (isValve(tag)) sel = { kind: "valve", id: tag };
+  else if (getSeg(tag)) sel = { kind: "segment", id: tag };
+  else return toast(`Tag ${tag} não encontrado.`, "warn");
+  setMode("select");
+  applySelection(); renderProps(); showTab("props");
+  if (focus && network) {
+    const target = sel.kind === "segment" ? chainOf(tag)[Math.floor(chainOf(tag).length / 2)] : tag;
+    if (model.positions[target]) network.moveTo({ position: { x: model.positions[target][0], y: model.positions[target][1] }, scale: Math.max(network.getScale(), 1.1), animation: { duration: 400 } });
+  }
+}
+
+async function refresh() {
+  const seq = ++refreshSeq;
+  let res;
+  try { res = await api("/api/analyze", { model }); }
+  catch (e) { return toast(e.message, "error"); }
+  if (seq !== refreshSeq) return;  // a newer edit is already being analysed
+  diagram = res;
+  const r = route && !routeStale && route.routes ? route.routes[route.active] : null;
+  await draw(r ? r.nodes : res.nodes, r ? r.edges : res.edges);
+  renderIssues();
+  $("p-legend").replaceChildren(h("h3", {}, "Legenda"));
+  $("p-legend").insertAdjacentHTML("beforeend", res.legend);  // legend HTML is built and escaped by valve_visualizer
+  $("p-legend").insertAdjacentHTML("beforeend",
+    '<div class="lg" style="margin-top:8px"><span class="sw square" style="background:#3BA55C;border-color:#1E5E33"></span>Rota: abrir</div>' +
+    '<div class="lg"><span class="sw square" style="background:#E04848;border-color:#7A1F1F"></span>Rota: fechar</div>' +
+    '<div class="lg"><span class="ln" style="border-top:5px solid #F28C28"></span>Rota</div>');
+}
+
+function fillTagLists() {
+  const pts = [...model.nodes.map(n => n.tag), ...model.valves.map(v => v.tag)].sort();
+  $("pointTags").replaceChildren(...pts.map(t => h("option", { value: t })));
+  $("allTags").replaceChildren(...[...allTags()].sort().map(t => h("option", { value: t })));
+}
+
+// ---------------------------------------------------------------- modes, tabs, toolbar
+const HINTS = {
+  node: "Clique numa área vazia do diagrama para posicionar o novo equipamento.  Esc para sair.",
+  edge: "Arraste de um nó até outro, no sentido do fluxo (origem → destino).  Esc para sair.",
+  valve: "Clique sobre a linha do trecho, no ponto onde fica a válvula.  Esc para sair.",
+};
+function setMode(m) {
+  mode = m;
+  for (const [id, mm] of [["mSelect", "select"], ["mNode", "node"], ["mEdge", "edge"], ["mValve", "valve"]]) $(id).classList.toggle("on", mm === m);
+  $("hint").hidden = !HINTS[m]; $("hint").textContent = HINTS[m] || "";
+  $("net").classList.toggle("crosshair", m === "node" || m === "valve");
+  if (!network) return;
+  if (m === "edge") { network.unselectAll(); network.addEdgeMode(); } else network.disableEditMode();
+}
+function showTab(name) {
+  for (const b of document.querySelectorAll("#tabs button")) b.classList.toggle("on", b.dataset.tab === name);
+  for (const p of document.querySelectorAll(".panel")) p.classList.toggle("on", p.id === "p-" + name);
+}
+for (const b of document.querySelectorAll("#tabs button")) b.onclick = () => showTab(b.dataset.tab);
+$("mSelect").onclick = () => setMode("select");
+$("mNode").onclick = () => setMode("node");
+$("mEdge").onclick = () => setMode("edge");
+$("mValve").onclick = () => setMode("valve");
+$("bDelete").onclick = deleteSelected;
+$("bUndo").onclick = undo;
+$("bRedo").onclick = redo;
+$("bSave").onclick = () => save();
+$("bReload").onclick = () => load(true);
+$("bFit").onclick = () => network && network.fit({ animation: true });
+$("bLayout").onclick = async () => {
+  if (!await confirmDialog("Reorganizar", "Reposicionar todos os itens automaticamente?\nCada área fica num bloco próprio, o fluxo vai da esquerda para a direita e a ordem dos itens é escolhida para cruzar o mínimo de linhas.\n(Dá para desfazer com Ctrl+Z.)", "Reorganizar", false)) return;
+  pushUndo();
+  await autoLayout();
+  updateDirty(); refresh();
+  setTimeout(() => network.fit({ animation: true }), 50);
+};
+$("q").addEventListener("keydown", e => { if (e.key === "Enter") { const t = normTag($("q").value); if (t) selectById(t, true); } });
+
+document.addEventListener("keydown", e => {
+  const typing = /INPUT|SELECT|TEXTAREA/.test(e.target.tagName);
+  const ctrl = e.ctrlKey || e.metaKey;
+  if (!$("overlay").hidden) return;
+  if (ctrl && e.key.toLowerCase() === "s") { e.preventDefault(); if (typing) e.target.blur(); save(); return; }
+  if (typing) { if (e.key === "Escape") e.target.blur(); return; }
+  if (ctrl && e.key.toLowerCase() === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if (ctrl && (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey))) { e.preventDefault(); redo(); }
+  else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelected(); }
+  else if (e.key === "Escape") setMode("select");
+  else if (!ctrl && e.key.toLowerCase() === "n") setMode("node");
+  else if (!ctrl && e.key.toLowerCase() === "t") setMode("edge");
+  else if (!ctrl && e.key.toLowerCase() === "v") setMode("valve");
+});
+window.addEventListener("beforeunload", e => { if (model && updateDirty()) { e.preventDefault(); e.returnValue = ""; } });
+
+// ---------------------------------------------------------------- load / save
+async function save(force = false) {
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();  // apply a pending field edit
+  try {
+    const res = await api("/api/save", { model, force });
+    if (res.conflict) {
+      if (await confirmDialog("Planilha alterada", "A planilha foi alterada fora do editor depois de aberta (por exemplo no Excel).\nSalvar mesmo assim substitui essas alterações. Para mantê-las, cancele e use ⟳ Recarregar.", "Substituir")) return save(true);
+      return false;
+    }
+    savedSnapshot = snapshot(); updateDirty();
+    toast("Planilha salva." + (res.backup ? ` Cópia da versão anterior em ${res.backup}.` : ""));
+    if (res.notes && res.notes.length) setTimeout(() => toast(res.notes.join(" "), "warn", 9000), 3600);
+    return true;
+  } catch (e) { toast(e.message, "error"); return false; }
+}
+
+async function load(ask) {
+  if (ask && updateDirty() && !await confirmDialog("Recarregar", "Descartar as alterações não salvas e reler a planilha?", "Descartar")) return;
+  try {
+    const res = await api("/api/model");
+    model = res.model; info = res.info;
+  } catch (e) { return toast(e.message, "error"); }
+  $("file").textContent = info.file;
+  undoStack = []; redoStack = []; sel = null; route = null; routeStale = false;
+  renderProps(); renderProducts(); renderRoutePanel(); fillTagLists();
+  savedSnapshot = snapshot();
+  await refresh();
+  // positions worked out on opening count as the starting point, not as an unsaved edit
+  savedSnapshot = snapshot(); updateDirty();
+  network.fit();
+}
+
+if (typeof vis === "undefined") {
+  $("net").replaceChildren(h("div", { id: "nolib" },
+    "Não foi possível carregar a biblioteca de desenho (vis-network). Sem internet? ",
+    "Baixe vis-network.min.js (link no fim de valve_editor.py), salve na pasta do editor e reabra."));
+} else {
+  setMode("select");
+  load(false);
+}
+</script></body></html>
