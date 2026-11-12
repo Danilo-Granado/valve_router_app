@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+
+# Copy of the workbook the editor makes before its first save in a session
+*.backup.xlsx
+# Temporary file the editor writes while saving
+.*.saving.xlsx
+
+# Lock files Excel / LibreOffice create while a workbook is open
+~$*.xlsx
+.~lock.*#
+
+# Default output of valve_visualizer.py
+valve_diagram.html
