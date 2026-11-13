@@ -174,8 +174,10 @@ python valve_visualizer.py valve_database.xlsx -o diagrama.html --open
 **Automatic layout.** Each area (column *Área*) gets its own labelled box, and flow runs
 from left to right. The order of the items is chosen to keep line crossings low, and
 items in line with each other are placed exactly level. Lines are drawn with right angles
-and routed around the items. Where two lines cross without being connected, one of them
-jumps over the other with a small arc. Several arrangements are tried (a few seconds for a
+and routed around the items, keep a minimum distance from lines running alongside them, and
+always leave room after an item before they turn. Lines meeting the same side of an item
+each get their own point along its edge. Where two lines cross without being connected, one
+of them jumps over the other with a small arc. Several arrangements are tried (a few seconds for a
 large plant) and the one with the fewest crossings for its size is kept.
 
 ## valve_editor.py

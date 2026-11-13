@@ -123,7 +123,7 @@ LAYOUT_GAP_Y = 34     # free space between items stacked in one column (room for
 LAYOUT_BAND_GAP = 150 # space between two area bands (room for the box, its title and lines)
 
 # (half width, half height) of each drawing shape, label included
-SHAPE_EXTENT = {"box": (46, 24), "database": (46, 30), "circle": (34, 28), "hexagon": (34, 42),
+SHAPE_EXTENT = {"box": (46, 24), "database": (46, 44), "circle": (34, 32), "hexagon": (34, 42),
                 "diamond": (32, 40), "triangleDown": (30, 34), "dot": (22, 18), "square": (30, 30)}
 VALVE_EXTENT = (25, 21)
 
@@ -330,17 +330,72 @@ def _isotonic(values, lo=None, hi=None):
     return out
 
 
-ORTHO_GAP, ORTHO_TRACK, ORTHO_STUB, ORTHO_SHORT = 5, 10, 20, 26  # same as GAP, TRACK, STUB, SHORT in DIAGRAM_JS
+# same as GAP, TRACK, SPACING, STUB, ROOM in DIAGRAM_JS
+ORTHO_GAP, ORTHO_TRACK, ORTHO_SPACING, ORTHO_STUB, ORTHO_ROOM = 5, 14, 12, 20, 18
 _CELL = 160  # grid cell for finding nearby line pieces quickly
 
 
 def _extent_js(shape, size):
     """[half width, above, below] of an item, as extent() in DIAGRAM_JS."""
-    if shape in ("box", "database"):
-        return 36, 24, 24
+    if shape == "box":
+        return 40, 15, 15
+    if shape == "database":
+        return 40, 40, 40
     if shape == "circle":
-        return 26, 24, 24
+        return 28, 28, 28
     return max(size + 2, 20), size + 2, size + 17
+
+
+def _outline(shape, size):
+    """Outline of a shape around its centre, as outline() in DIAGRAM_JS: ("r", radius) or ("poly", points)."""
+    import math
+    s = size
+    if shape == "box":
+        return "poly", [(-40, -14.5), (40, -14.5), (40, 14.5), (-40, 14.5)]
+    if shape == "database":
+        return "poly", [(-40, -40), (40, -40), (40, 40), (-40, 40)]
+    if shape == "circle":
+        return "r", 28
+    if shape == "square":
+        return "poly", [(-s, -s), (s, -s), (s, s), (-s, s)]
+    if shape == "diamond":
+        return "poly", [(0, -s), (s, 0), (0, s), (-s, 0)]
+    if shape == "hexagon":
+        return "poly", [(s * math.cos(math.pi / 3 * i), s * math.sin(math.pi / 3 * i)) for i in range(6)]
+    if shape in ("triangle", "triangleDown"):
+        r = s * 1.15
+        side = 2 * r
+        ir, h = math.sqrt(3) / 6 * side, math.sqrt(side * side - r * r)
+        k = 1 if shape == "triangle" else -1
+        dy = k * 0.275 * r
+        return "poly", [(0, dy - k * (h - ir)), (r, dy + k * ir), (-r, dy + k * ir)]
+    return "r", s
+
+
+def _border(shape, size, side, off=0.0):
+    """As border() in DIAGRAM_JS: where a line from the centre towards side R/L/B/T, shifted off
+    across it, meets the outline (distance along the line, negative towards L / T)."""
+    kind, o = _outline(shape, size)
+    horiz, sign = side in ("R", "L"), (1 if side in ("R", "B") else -1)
+    if kind == "r":
+        return sign * max(o * o - off * off, 0) ** 0.5
+    best = 0.0
+    for i, (x1, y1) in enumerate(o):
+        x2, y2 = o[(i + 1) % len(o)]
+        a1, a2, b1, b2 = (y1, y2, x1, x2) if horiz else (x1, x2, y1, y2)
+        if a1 == a2 or (a1 - off) * (a2 - off) > 0:
+            continue
+        b = b1 + (b2 - b1) * (off - a1) / (a2 - a1)
+        if b * sign > best * sign:
+            best = b
+    return best
+
+
+def _side(p, q):
+    """Which way a line leaves p towards q, as sideOf() in DIAGRAM_JS."""
+    if abs(q[0] - p[0]) >= abs(q[1] - p[1]):
+        return "R" if q[0] > p[0] else "L"
+    return "B" if q[1] > p[1] else "T"
 
 
 def _pieces(pts):
@@ -468,10 +523,10 @@ def ortho_routes(plant, pos):
                 cost += 1.5
             if label_below[fb] and abs(pts[-2][0] - pts[-1][0]) < 0.5 and pts[-2][1] > pts[-1][1]:
                 cost += 1.5
-            if len(pts) > 2:
-                for p, q in ((pts[0], pts[1]), (pts[-2], pts[-1])):
-                    if abs(p[0] - q[0]) + abs(p[1] - q[1]) < ORTHO_SHORT:
-                        cost += 2
+            if len(pts) > 2:  # room to turn after leaving / before reaching an item
+                for node, p, q in ((fa, pts[0], pts[1]), (fb, pts[-1], pts[-2])):
+                    if abs(p[0] - q[0]) + abs(p[1] - q[1]) - abs(_border(*shape[node], _side(p, q))) < ORTHO_ROOM:
+                        cost += 30
             for h, c, slo, shi in segs:
                 length += shi - slo
                 for o in near:
@@ -488,10 +543,10 @@ def ortho_routes(plant, pos):
                             continue
                         seen.add(k)
                         rh, rc, rlo, rhi, ends = placed[k]
-                        shares = fa in ends or fb in ends
+                        shared = fa if fa in ends else fb if fb in ends else None
                         if h == rh:
-                            if abs(c - rc) < T - 2 and min(shi, rhi) - max(slo, rlo) > 2:
-                                cost += 3 if shares else 12
+                            if abs(c - rc) < ORTHO_SPACING and min(shi, rhi) - max(slo, rlo) > 2:
+                                cost += 12 if shared is None else 8 if shape[shared][0] == "dot" else 3
                         else:
                             hz, vt = ((c, slo, shi), (rc, rlo, rhi)) if h else ((rc, rlo, rhi), (c, slo, shi))
                             if hz[1] + 0.5 < vt[0] < hz[2] - 0.5 and vt[1] + 0.5 < hz[0] < vt[2] - 0.5:
@@ -529,7 +584,7 @@ def ortho_score(plant, pos):
                 rh, rc, rlo, rhi, rends = segs[j]
                 shares = ends[0] in rends or ends[1] in rends
                 if h == rh:
-                    overlap += not shares and abs(c - rc) < T - 2 and min(hi, rhi) - max(lo, rlo) > 2
+                    overlap += not shares and abs(c - rc) < ORTHO_SPACING and min(hi, rhi) - max(lo, rlo) > 2
                 else:
                     hz, vt = ((c, lo, hi), (rc, rlo, rhi)) if h else ((rc, rlo, rhi), (c, lo, hi))
                     cross += hz[1] + 0.5 < vt[0] < hz[2] - 0.5 and vt[1] + 0.5 < hz[0] < vt[2] - 0.5
@@ -1111,20 +1166,62 @@ const VD = (() => {
   const AREA_COLORS = [["#EAF2FB", "#7FA7D6", "#2E5C8A"], ["#EDF6E9", "#8DBF7A", "#3D6B2C"], ["#FDF2E4", "#E0A860", "#8A5A12"],
     ["#F3EEFA", "#A88BD0", "#5B3F8A"], ["#FCEDEE", "#D98A90", "#8A2F37"], ["#E9F6F5", "#6FB8B2", "#1F6B65"],
     ["#F6F4E3", "#BDB15C", "#6B6215"], ["#F0F0F0", "#9A9A9A", "#4A4A4A"]];
-  const GAP = 5;      // free space kept between a line and an item it doesn't connect to
-  const TRACK = 10;   // distance between lines running side by side
-  const STUB = 20;    // how far a line leaves an item before turning back (lines going right to left)
-  const SHORT = 26;   // first / last pieces shorter than this are avoided
+  const GAP = 5;        // free space kept between a line and an item it doesn't connect to
+  const TRACK = 14;     // distance between the alternative runs tried for a line
+  const SPACING = 12;   // minimum distance between lines running side by side
+  const STUB = 20;      // how far a line leaves an item before turning back (lines going right to left)
+  const ROOM = 18;      // a line runs at least this far from an item's edge before it turns
+  const PORT_GAP = 12;  // distance between lines meeting the same side of an item
 
   // [half width, above centre, below centre] of an item with its label
   function extent(n) {
     if (n.bend) return [4, 4, 4];
-    if (["box", "database"].includes(n.shape)) return [36, 24, 24];
-    if (n.shape === "circle") return [26, 24, 24];
+    if (n.shape === "box") return [40, 15, 15];  // label inside: the sizes vis-network draws
+    if (n.shape === "database") return [40, 40, 40];
+    if (n.shape === "circle") return [28, 28, 28];
     const s = n.size || 10;
     return [Math.max(s + 2, 20), s + 2, s + 17];
   }
   function point(p) { return !p ? null : Array.isArray(p) ? { x: p[0], y: p[1] } : { x: p.x, y: p.y }; }
+
+  // Outline of an item's shape around its centre, as vis-network draws it: {r} or {poly}.
+  // _outline() in valve_visualizer.py repeats this.
+  function outline(n) {
+    const s = n.size || 10;
+    switch (n.shape) {
+      case "box": return { poly: [[-40, -14.5], [40, -14.5], [40, 14.5], [-40, 14.5]] };
+      case "database": return { poly: [[-40, -40], [40, -40], [40, 40], [-40, 40]] };
+      case "circle": return { r: 28 };
+      case "square": return { poly: [[-s, -s], [s, -s], [s, s], [-s, s]] };
+      case "diamond": return { poly: [[0, -s], [s, 0], [0, s], [-s, 0]] };
+      case "hexagon": return { poly: [0, 1, 2, 3, 4, 5].map(i => [s * Math.cos(Math.PI / 3 * i), s * Math.sin(Math.PI / 3 * i)]) };
+      case "triangle": case "triangleDown": {
+        const r = s * 1.15, side = 2 * r, ir = Math.sqrt(3) / 6 * side, h = Math.sqrt(side * side - r * r);
+        const k = n.shape === "triangle" ? 1 : -1, dy = k * 0.275 * r;
+        return { poly: [[0, dy - k * (h - ir)], [r, dy + k * ir], [-r, dy + k * ir]] };
+      }
+      default: return { r: s };
+    }
+  }
+  // Where a line leaving the centre towards side "R" / "L" / "B" / "T", shifted `off` across
+  // that direction, meets the outline: the distance along the line (negative towards L / T).
+  function border(n, side, off) {
+    const o = outline(n), horiz = side === "R" || side === "L", sign = side === "R" || side === "B" ? 1 : -1;
+    if (o.r !== undefined) return sign * Math.sqrt(Math.max(o.r * o.r - off * off, 0));
+    let best = 0;
+    const P = o.poly;
+    for (let i = 0; i < P.length; i++) {
+      const [x1, y1] = P[i], [x2, y2] = P[(i + 1) % P.length];
+      const a1 = horiz ? y1 : x1, a2 = horiz ? y2 : x2, b1 = horiz ? x1 : y1, b2 = horiz ? x2 : y2;
+      if (a1 === a2 || (a1 - off) * (a2 - off) > 0) continue;
+      const b = b1 + (b2 - b1) * (off - a1) / (a2 - a1);
+      if (b * sign > best * sign) best = b;
+    }
+    return best;
+  }
+  function sideOf(p, q) {  // which way a line leaves p towards q
+    return Math.abs(q.x - p.x) >= Math.abs(q.y - p.y) ? (q.x > p.x ? "R" : "L") : (q.y > p.y ? "B" : "T");
+  }
 
   // Pieces of a polyline as axis-aligned segments {h, c, lo, hi}: h = horizontal, c = its y (or x)
   function pieces(pts) {
@@ -1159,12 +1256,13 @@ const VD = (() => {
   // that runs over no item, doesn't lie on top of another line and crosses the fewest wins.
   // keep: routes of other edges that stay as they are (only `edges` are routed).
   function orthoRoutes(nodes, edges, getPos, keep) {
-    const P = {}, boxes = [], labelBelow = {};
+    const P = {}, boxes = [], labelBelow = {}, info = {};
     for (const n of nodes) {
       if (n.bend) continue;
       const p = point(getPos(n.id));
       if (!p) continue;
       P[n.id] = p;
+      info[n.id] = n;
       labelBelow[n.id] = !["box", "database", "circle"].includes(n.shape);
       const [w, up, down] = extent(n);
       boxes.push({ id: n.id, x1: p.x - w, x2: p.x + w, y1: p.y - up, y2: p.y + down });
@@ -1233,10 +1331,12 @@ const VD = (() => {
         // leaving downwards / arriving from below runs through the item's tag label
         if (labelBelow[e.from] && Math.abs(pts[1].x - pts[0].x) < 0.5 && pts[1].y > pts[0].y) cost += 1.5;
         if (labelBelow[e.to] && Math.abs(pts[m - 2].x - pts[m - 1].x) < 0.5 && pts[m - 2].y > pts[m - 1].y) cost += 1.5;
-        // a very short first / last piece looks like a stub and turns the arrowhead the wrong way
-        const len = (p, q) => Math.abs(p.x - q.x) + Math.abs(p.y - q.y);
-        if (m > 2 && len(pts[0], pts[1]) < SHORT) cost += 2;
-        if (m > 2 && len(pts[m - 2], pts[m - 1]) < SHORT) cost += 2;
+        // room to turn: a line runs ROOM clear of the item's edge before its first / after its last bend
+        if (m > 2) {
+          const len = (p, q) => Math.abs(p.x - q.x) + Math.abs(p.y - q.y);
+          if (len(pts[0], pts[1]) - Math.abs(border(info[e.from], sideOf(pts[0], pts[1]), 0)) < ROOM) cost += 30;
+          if (len(pts[m - 2], pts[m - 1]) - Math.abs(border(info[e.to], sideOf(pts[m - 1], pts[m - 2]), 0)) < ROOM) cost += 30;
+        }
         for (const s of segs) {
           length += s.hi - s.lo;
           for (const o of near) {
@@ -1245,9 +1345,12 @@ const VD = (() => {
             if (hit) cost += 100;
           }
           for (const r of placed) {
-            const shares = r.ends.includes(e.from) || r.ends.includes(e.to);
+            const shared = r.ends.includes(e.from) ? e.from : r.ends.includes(e.to) ? e.to : null;
             if (s.h === r.h) {
-              if (Math.abs(s.c - r.c) < TRACK - 2 && Math.min(s.hi, r.hi) - Math.max(s.lo, r.lo) > 2) cost += shares ? 3 : 12;
+              // lines closer than SPACING; two lines leaving one item side by side are spread out
+              // along its edge afterwards (orthoItems), but a junction point has no edge to spread on
+              if (Math.abs(s.c - r.c) < SPACING && Math.min(s.hi, r.hi) - Math.max(s.lo, r.lo) > 2)
+                cost += shared === null ? 12 : info[shared].shape === "dot" ? 8 : 3;
             } else {
               const hz = s.h ? s : r, vt = s.h ? r : s;
               if (vt.c > hz.lo + 0.5 && vt.c < hz.hi - 0.5 && hz.c > vt.lo + 0.5 && hz.c < vt.hi - 0.5) cost += 1;
@@ -1265,21 +1368,79 @@ const VD = (() => {
     return routes;
   }
 
-  // vis items for right-angle lines: each edge becomes pieces joined at invisible bend points.
-  // Piece ids are the edge id, then "<edge id>~1", "~2"...; bend point ids "<edge id>~b1"...
-  function orthoItems(nodes, edges, routes) {
-    const bends = [], out = [];
+  // Where lines meet their items. A line that has a side of an item to itself meets it at the
+  // centre of that side; lines sharing a side get their own points along it, PORT_GAP apart and in
+  // the order they leave in, so they don't cross or run on top of each other. Junction points
+  // (dots) are where lines join, so lines meet there at one point.
+  // Returns {edge id: {pts, a, b}}: the drawn points and whether each end stops at the item's edge.
+  function connections(nodes, edges, routes) {
+    const info = {}, groups = {}, off = {};
+    for (const n of nodes) info[n.id] = n;
     for (const e of edges) {
       const pts = routes[e.id];
-      if (!pts || pts.length <= 2) { out.push({ ...e, smooth: { enabled: false } }); continue; }
-      const ids = [e.from];
-      for (let k = 1; k < pts.length - 1; k++) {
-        const id = `${e.id}~b${k}`;
-        ids.push(id);
-        bends.push({ id, x: pts[k].x, y: pts[k].y, bend: true, shape: "dot", size: 0.5, fixed: true, physics: false,
-          chosen: false, label: undefined, borderWidth: 0, color: { background: "rgba(0,0,0,0)", border: "rgba(0,0,0,0)" } });
+      if (!pts || pts.length < 2) continue;
+      const m = pts.length;
+      for (const [end, id, p, q, r] of [["a", e.from, pts[0], pts[1], pts[2] || pts[1]], ["b", e.to, pts[m - 1], pts[m - 2], pts[m - 3] || pts[m - 2]]]) {
+        const n = info[id];
+        if (!n || n.shape === "dot") continue;
+        const side = sideOf(p, q), horiz = side === "R" || side === "L";
+        (groups[id + "|" + side] = groups[id + "|" + side] || []).push({ id: e.id, end, n, side, key: horiz ? r.y : r.x });
       }
-      ids.push(e.to);
+    }
+    for (const g of Object.values(groups)) {
+      if (g.length < 2) continue;
+      g.sort((u, v) => u.key - v.key || (u.id < v.id ? -1 : u.id > v.id ? 1 : u.end < v.end ? -1 : 1));
+      const n = g[0].n, horiz = g[0].side === "R" || g[0].side === "L";
+      const span = horiz ? border(n, "B", 0) - border(n, "T", 0) : border(n, "R", 0) - border(n, "L", 0);
+      const gap = Math.min(PORT_GAP, 0.7 * span / (g.length - 1));
+      g.forEach((x, i) => { off[x.id + "|" + x.end] = (i - (g.length - 1) / 2) * gap; });
+    }
+    const out = {};
+    for (const e of edges) {
+      const pts = routes[e.id];
+      if (!pts) continue;
+      const oa = off[e.id + "|a"] || 0, ob = off[e.id + "|b"] || 0;
+      if (!oa && !ob) { out[e.id] = { pts, a: false, b: false }; continue; }
+      const m0 = pts.length, sa = sideOf(pts[0], pts[1]), sb = sideOf(pts[m0 - 1], pts[m0 - 2]);
+      const ha = sa === "R" || sa === "L", hb = sb === "R" || sb === "L";
+      let p = pts.map(q => ({ x: q.x, y: q.y }));
+      const shift = (q, horiz, d) => { if (horiz) q.y += d; else q.x += d; };
+      if (p.length === 2 && oa === ob) { shift(p[0], ha, oa); shift(p[1], ha, oa); }
+      else {
+        if (p.length === 2) {  // a straight line between two ends at different points gets a step halfway
+          const c = ha ? (p[0].x + p[1].x) / 2 : (p[0].y + p[1].y) / 2;
+          p = ha ? [p[0], { x: c, y: p[0].y }, { x: c, y: p[1].y }, p[1]] : [p[0], { x: p[0].x, y: c }, { x: p[1].x, y: c }, p[1]];
+        }
+        const m = p.length;
+        shift(p[0], ha, oa); shift(p[1], ha, oa);
+        shift(p[m - 1], hb, ob); shift(p[m - 2], hb, ob);
+      }
+      const m = p.length, A = pts[0], B = pts[m0 - 1];
+      if (oa) p[0] = ha ? { x: A.x + border(info[e.from], sa, oa), y: A.y + oa } : { x: A.x + oa, y: A.y + border(info[e.from], sa, oa) };
+      if (ob) p[m - 1] = hb ? { x: B.x + border(info[e.to], sb, ob), y: B.y + ob } : { x: B.x + ob, y: B.y + border(info[e.to], sb, ob) };
+      out[e.id] = { pts: simplify(p), a: !!oa, b: !!ob };
+    }
+    return out;
+  }
+
+  // vis items for right-angle lines: each edge becomes pieces joined at invisible bend points.
+  // Piece ids are the edge id, then "<edge id>~1", "~2"...; bend point ids "<edge id>~b1"..., and
+  // "<edge id>~bA" / "~bZ" where the line stops at the edge of its first / last item.
+  function orthoItems(nodes, edges, routes) {
+    const bends = [], out = [], drawn = connections(nodes, edges, routes);
+    const bend = (id, q) => bends.push({ id, x: q.x, y: q.y, bend: true, shape: "dot", size: 0.5, fixed: true, physics: false,
+      chosen: false, label: undefined, borderWidth: 0, color: { background: "rgba(0,0,0,0)", border: "rgba(0,0,0,0)" } });
+    for (const e of edges) {
+      const d = drawn[e.id];
+      if (!d || (d.pts.length <= 2 && !d.a && !d.b)) { out.push({ ...e, smooth: { enabled: false } }); continue; }
+      const pts = d.pts, ids = [d.a ? `${e.id}~bA` : e.from];
+      if (d.a) bend(ids[0], pts[0]);
+      for (let k = 1; k < pts.length - 1; k++) {
+        ids.push(`${e.id}~b${k}`);
+        bend(ids[k], pts[k]);
+      }
+      ids.push(d.b ? `${e.id}~bZ` : e.to);
+      if (d.b) bend(ids[ids.length - 1], pts[pts.length - 1]);
       let labelAt = 0, longest = -1;  // the label goes on the longest horizontal piece
       for (let k = 0; k < pts.length - 1; k++) {
         const len = Math.abs(pts[k + 1].x - pts[k].x) * 2 + Math.abs(pts[k + 1].y - pts[k].y);
