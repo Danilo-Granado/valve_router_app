@@ -509,8 +509,8 @@ def save_to_matrix(plant, name, product, start, end, segs, open_v, close_v, endp
     for i, v in enumerate(values, start=1):
         ws.cell(row=row, column=i, value=v).font = Font(name="Arial")
     fills = {"O": "C6EFCE", "C": "FFC7CE", "MO": "FFEB9C", "MC": "FFEB9C", "E": "DDEBF7"}
-    for tag, c in existing.items():
-        manual = plant.valves[tag]["type"].lower() == "manual"
+    for tag, c in existing.items():  # columns of valves that no longer exist stay blank
+        manual = plant.valves.get(tag, {}).get("type", "").lower() == "manual"
         if tag in open_v:
             state = "MO" if manual else "O"
         elif tag in close_v:

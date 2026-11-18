@@ -207,11 +207,12 @@ async function api(path, body) {
 
 // ---------------------------------------------------------------- dialogs
 let dlgResolve = null, dlgOk = null;
-function openDialog(title, body, { okText = "OK", danger = false, onOk = () => true } = {}) {
+function openDialog(title, body, { okText = "OK", cancelText = "Cancelar", danger = false, onOk = () => true } = {}) {
   $("dlgTitle").textContent = title;
   $("dlgBody").replaceChildren(body);
   $("dlgErr").textContent = "";
   $("dlgOk").textContent = okText;
+  $("dlgCancel").textContent = cancelText;
   $("dlgOk").className = danger ? "danger" : "primary";
   $("overlay").hidden = false;
   dlgOk = onOk;
@@ -255,6 +256,36 @@ function nextValveTag(body) {
   while (nums.has(n) || allTags().has(`${code}-${n}`)) n++;
   return `${code}-${n}`;
 }
+// Tag for an item whose type changes: the type part of [Área]-[Tipo]-[Número] gets the new type's
+// code from the Códigos sheet (VGL-001 -> VGA-001, 100-TQ-101 -> 100-RE-101). null if there is no
+// code for the new type, the tag already has it, or no part of the tag looks like a type code.
+function suggestTag(kind, tag, oldType, newType) {
+  const codes = kind === "node" ? info.codes.node : info.codes.valve;
+  const code = (codes[newType] || {}).code, old = (codes[oldType] || {}).code;
+  if (!code) return null;
+  const parts = tag.split("-"), known = new Set(Object.values(codes).map(c => c.code));
+  let i = old ? parts.indexOf(old) : -1;
+  if (i < 0) i = parts.findIndex(p => known.has(p));       // a code of another type
+  if (i < 0) i = parts.findIndex(p => /^[A-Z]+$/.test(p));  // letters only, e.g. MF in MF-04
+  if (i < 0 || parts[i] === code) return null;
+  parts[i] = code;
+  let t = parts.join("-");
+  const taken = x => x !== tag && allTags().has(x);
+  // valve numbers never repeat, whatever the body type
+  const otherNums = new Set(model.valves.filter(v => v.tag !== tag).map(v => trailing(v.tag)));
+  if (taken(t) || (kind === "valve" && otherNums.has(trailing(t)))) {  // next free number, same digits
+    const last = parts.length - 1, m = /^(\d+)$/.exec(parts[last]);
+    if (!m || last === i) return null;
+    let n = parseInt(m[1], 10);
+    do {
+      n++;
+      parts[last] = String(n).padStart(m[1].length, "0");
+      t = parts.join("-");
+    } while (taken(t) || (kind === "valve" && otherNums.has(n)));
+  }
+  return t;
+}
+
 function nextSegTag() {
   let n = model.segments.length ? Math.max(...model.segments.map(s => trailing(s.tag))) + 1 : 1;
   while (allTags().has(`TR-${String(n).padStart(3, "0")}`)) n++;
@@ -297,20 +328,59 @@ function renameTag(kind, oldTag, raw) {
   if (tag === oldTag) return true;
   const problem = tagProblem(tag, oldTag);
   if (problem) { toast(problem, "error"); return false; }
-  mutate(() => {
-    if (kind === "node") {
-      getNode(oldTag).tag = tag;
-      for (const s of model.segments) { if (s.from === oldTag) s.from = tag; if (s.to === oldTag) s.to = tag; }
-    } else if (kind === "segment") {
-      getSeg(oldTag).tag = tag;
-      for (const v of model.valves) if (v.segment === oldTag) v.segment = tag;
-    } else {
-      getValve(oldTag).tag = tag;
-    }
-    if (model.positions[oldTag]) { model.positions[tag] = model.positions[oldTag]; delete model.positions[oldTag]; }
-    if (sel && sel.id === oldTag) sel.id = tag;
-  });
+  mutate(() => applyRename(kind, oldTag, tag));
   return true;
+}
+function applyRename(kind, oldTag, tag) {
+  // call inside mutate(); the tag must already be checked with tagProblem()
+  if (kind === "node") {
+    getNode(oldTag).tag = tag;
+    for (const s of model.segments) { if (s.from === oldTag) s.from = tag; if (s.to === oldTag) s.to = tag; }
+  } else if (kind === "segment") {
+    getSeg(oldTag).tag = tag;
+    for (const v of model.valves) if (v.segment === oldTag) v.segment = tag;
+  } else {
+    getValve(oldTag).tag = tag;
+  }
+  if (model.positions[oldTag]) { model.positions[tag] = model.positions[oldTag]; delete model.positions[oldTag]; }
+  if (sel && sel.id === oldTag) sel.id = tag;
+  // saving also renames the tag in the operations already in the Matriz de Válvulas
+  model.renames.push([kind, oldTag, tag]);
+}
+
+// A node's type or a valve's body type changed: apply it and, when the tag follows the type's code,
+// ask whether the tag should change too (one undo step for both).
+async function changeType(kind, value) {
+  const get = kind === "node" ? () => getNode(sel.id) : () => getValve(sel.id);
+  const key = kind === "node" ? "type" : "body";
+  const item = get(), oldType = item[key], oldTag = item.tag;
+  if (value === oldType) return;
+  const suggestion = suggestTag(kind, oldTag, oldType, value);
+  if (!suggestion) return mutate(() => { get()[key] = value; });
+  const code = ((kind === "node" ? info.codes.node : info.codes.valve)[value] || {}).code;
+  const input = h("input", { value: suggestion, class: "tag", dataset: { key: "newtag" } });
+  let chosen = null;
+  const body = h("div", {},
+    h("div", { style: "margin-bottom:8px; line-height:1.45" },
+      `${kind === "node" ? "Tipo" : "Tipo de corpo"} alterado de ${oldType || "—"} para ${value}. `,
+      "O código de ", h("b", {}, value), " é ", h("b", { class: "tag" }, code), ". Mudar também o tag ", h("b", { class: "tag" }, oldTag), "?"),
+    field("Novo tag", input),
+    h("div", { class: "muted" }, "As operações já gravadas na Matriz de Válvulas passam a usar o novo tag quando a planilha for salva."));
+  const ok = await openDialog("Mudar o tag?", body, { okText: "Mudar o tag", cancelText: `Manter ${oldTag}`, onOk: () => {
+    const t = normTag(input.value);
+    if (t === oldTag) { chosen = null; return true; }
+    const problem = tagProblem(t, oldTag);
+    if (problem) return problem;
+    chosen = t;
+    return true;
+  } });
+  const find = () => kind === "node" ? getNode(oldTag) : getValve(oldTag);
+  if (!find()) return;  // removed while the dialog was open
+  mutate(() => {
+    find()[key] = value;
+    if (ok && chosen) applyRename(kind, oldTag, chosen);
+  });
+  if (ok && chosen) toast(`Tag alterado: ${oldTag} → ${chosen}.`);
 }
 
 function placeValve(tag) {
@@ -478,7 +548,7 @@ function renderNodeProps(p, n) {
   const segs = model.segments.filter(s => s.from === n.tag || s.to === n.tag);
   p.append(h("h3", {}, "Equipamento / nó"),
     field("Tag", tagInput("node", n.tag)),
-    field("Tipo", onChange(selectEl(opt("node_type"), n.type, { dataset: { key: "type" } }), setField(N, "type"))),
+    field("Tipo", onChange(selectEl(opt("node_type"), n.type, { dataset: { key: "type" } }), v => changeType("node", v))),
     field("Descrição", onChange(h("input", { value: n.desc, dataset: { key: "desc" } }), setField(N, "desc", v => v.trim()))),
     h("div", { class: "inline" },
       field("Área", onChange(h("input", { value: n.area, dataset: { key: "area" } }), setField(N, "area", v => v.trim()))),
@@ -555,7 +625,7 @@ function renderValveProps(p, v) {
         val => moveTo(v.segment, parseInt(val, 10) - 1)))),
     s ? h("div", { class: "muted", style: "margin:-3px 0 8px" }, `${s.from} → ${s.to}  (posição 1 = mais perto de ${s.from})`) : "",
     h("div", { class: "inline" },
-      field("Tipo de corpo", onChange(selectEl(opt("body"), v.body, { dataset: { key: "body" } }), setField(V, "body"))),
+      field("Tipo de corpo", onChange(selectEl(opt("body"), v.body, { dataset: { key: "body" } }), b => changeType("valve", b))),
       field("Acionamento", onChange(selectEl(opt("actuation"), v.actuation, { dataset: { key: "actuation" } }), setField(V, "actuation")))),
     h("div", { class: "inline" },
       field("Status", onChange(selectEl(opt("valve_status"), v.status, { dataset: { key: "status" } }), setField(V, "status"))),
@@ -933,6 +1003,7 @@ async function load(ask) {
   try {
     const res = await api("/api/model");
     model = res.model; info = res.info;
+    model.renames = [];  // [kind, old tag, new tag] since the workbook was opened, for the Matriz de Válvulas
   } catch (e) { return toast(e.message, "error"); }
   $("file").textContent = info.file;
   undoStack = []; redoStack = []; sel = null; route = null; routeStale = false;
