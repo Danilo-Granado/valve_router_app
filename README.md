@@ -195,6 +195,12 @@ Opens the editor in the browser (at `http://127.0.0.1:8765/`; `--port` to change
 - **＋ Válvula** (`V`): click on a segment's line where the valve goes.
 - Click an item to edit it in the side panel; drag to move it. `Delete` deletes,
   `Ctrl+Z` / `Ctrl+Y` undo / redo, `Ctrl+S` saves.
+- Changing an item's type (*Tipo*, or *Tipo de corpo* for a valve) asks whether its tag should
+  change too, suggesting a tag with the new type's code from the *Códigos* sheet, e.g.
+  `VGL-001` → `VGA-001` for Globo → Gaveta. You can edit the suggestion or keep the old tag;
+  `Ctrl+Z` undoes the type and tag change together.
+- Renaming a tag (in the *Tag* field or through a type change) also renames it in the
+  operations already saved in *Matriz de Válvulas* when you save the workbook.
 - **Reorganizar** applies the automatic layout described above.
 - **Verificação** lists the problems in the data; **Rota** calculates routes and saves
   operations to *Matriz de Válvulas*.

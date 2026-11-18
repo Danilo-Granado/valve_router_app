@@ -299,12 +299,66 @@ def extend_row(ws, r):
             dst.value = Translator(src.value, origin=src.coordinate).translate_formula(dst.coordinate)
 
 
-def save_model(path, model):
-    """Write the model into the workbook at path. Returns notes about anything worth telling the user."""
+def matrix_renames(renames, in_matrix):
+    """Tags to change in the Matriz de Válvulas so its operations follow the renames made in the editor.
+
+    renames: [kind, old tag, new tag] made since the workbook was opened, in order (kind is
+    "node", "valve" or "segment"; undoing a rename removes it from the list).
+    in_matrix: {(kind, tag when opened): tag the Matriz uses now}, from the previous save.
+    Returns ({(kind, tag when opened): tag wanted now}, {kind: {tag in the Matriz: new tag}})."""
+    wanted = {}
+    for kind, old, new in renames:
+        match = [k for k, t in wanted.items() if k[0] == kind and t == old]
+        if match:
+            wanted[match[0]] = new
+        elif (kind, old) not in wanted:
+            wanted[(kind, old)] = new
+        # else: an item made after opening reusing a renamed tag; it has no operations yet
+    changes = {}
+    for key in set(wanted) | set(in_matrix):
+        now, want = in_matrix.get(key, key[1]), wanted.get(key, key[1])
+        if now != want:
+            changes.setdefault(key[0], {})[now] = want
+    return wanted, changes
+
+
+def rename_in_matrix(wb, changes, notes):
+    """Apply matrix_renames() changes: valve column headers, Origem / Destino and Rota (trechos)."""
+    name = vr.find_sheet(wb, "matrix", required=False)
+    if not name or not changes:
+        return
+    ws = wb[name]
+    fixed = 6  # Operação, Produto, Origem, Destino, Rota (trechos), Salvo em
+    valves, points, segs = changes.get("valve", {}), {**changes.get("node", {}), **changes.get("valve", {})}, changes.get("segment", {})
+    headers = {c: ws.cell(1, c).value for c in range(fixed + 1, ws.max_column + 1) if ws.cell(1, c).value}
+    after = [valves.get(v, v) for v in headers.values()]
+    for c, tag in headers.items():
+        if tag in valves:
+            if after.count(valves[tag]) > 1:  # the new tag already has a column (e.g. a deleted valve)
+                notes.append(f"Matriz de Válvulas: a coluna {tag} não foi renomeada para {valves[tag]}, "
+                             "que já tem uma coluna.")
+                continue
+            ws.cell(1, c).value = valves[tag]
+    for r in range(2, ws.max_row + 1):
+        for c in (3, 4):
+            v = ws.cell(r, c).value
+            if isinstance(v, str) and v.strip() in points:
+                ws.cell(r, c).value = points[v.strip()]
+        v = ws.cell(r, 5).value
+        if isinstance(v, str) and segs:
+            route = [t.strip() for t in v.split(">")]
+            if any(t in segs for t in route):
+                ws.cell(r, 5).value = " > ".join(segs.get(t, t) for t in route)
+
+
+def save_model(path, model, matrix_changes=None):
+    """Write the model into the workbook at path. matrix_changes: tags to change in the Matriz de
+    Válvulas (from matrix_renames). Returns notes about anything worth telling the user."""
     wb = load_workbook(path)
     notes = []
     for key, fields in TABLE_FIELDS.items():
         write_table(wb[vr.find_sheet(wb, key)], model[key], fields, notes)
+    rename_in_matrix(wb, matrix_changes, notes)
 
     # node and valve positions on the diagram, in a hidden sheet the scripts ignore
     name = next((n for n in LAYOUT_SHEETS if n in wb.sheetnames), None)
@@ -450,10 +504,12 @@ class EditorState:
         self.mtime = None
         self.info = None
         self.backup = None
+        self.in_matrix = {}  # renamed items: (kind, tag when opened) -> tag the Matriz de Válvulas uses
 
     def load(self):
         model, self.info = load_model(self.path)
         self.mtime = self.path.stat().st_mtime_ns
+        self.in_matrix = {}
         return model
 
 
@@ -531,7 +587,9 @@ class Handler(BaseHTTPRequestHandler):
                         st.backup = st.path.with_name(f"{st.path.stem}.backup{st.path.suffix}")
                         shutil.copy2(st.path, st.backup)
                         backup = st.backup.name
-                    notes = save_model(st.path, req["model"])
+                    wanted, changes = matrix_renames(req["model"].get("renames", []), st.in_matrix)
+                    notes = save_model(st.path, req["model"], changes)
+                    st.in_matrix = wanted
                     st.mtime = st.path.stat().st_mtime_ns
                 return self.send_json({"ok": True, "backup": backup, "notes": notes})
             if self.path == "/api/save_operation":
